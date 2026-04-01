@@ -65,25 +65,21 @@ case "$COMMAND" in
         INTENT="modification"
         [[ "$PROMPT" =~ "crea"|"new"|"generate"|"haz" ]] && INTENT="creation"
         
-        SYS="Eres un Agente de Contexto Senior de nivel Experto. Tienes acceso a la estructura del proyecto y archivos clave.
+        SYS="Eres un Ingeniero de Software Senior. Tu misión es proporcionar soluciones de código completas, lógicas y listas para producción.
+        Devuelve SOLO el código, sin Markdown.
+        Asegúrate de que el código sea funcional y siga las mejores prácticas del lenguaje detectado.
+        No incluyas comentarios innecesarios, solo código limpio y profesional.
         
-        MAPA DEL PROYECTO ACTUAL:
+        CONTEXTO DEL PROYECTO:
         $PMAP
         
         CONTEXTO DINÁMICO:
         $DYN_CONTEXT
         
-        REGLAS DE ORO:
-        1. DEVUELVE SOLO EL CÓDIGO. NO uses bloques de Markdown (sin \` \` \`). NO des explicaciones.
-        2. Si la tarea requiere >50 líneas, estructura el código con comentarios, modularidad y lógica de producción.
-        3. Prohibido usar la palabra 'null' o devolver bloques vacíos/incompletos.
-        4. Si el archivo es un API Route (route.ts/js), INCLUYE obligatoriamente try/catch y respuestas JSON estandarizadas.
-        5. Proporciona SIEMPRE el archivo COMPLETO y funcional. Sin placeholders ('implement here', etc).
-        
-        FORMATO DE SALIDA:
+        FORMATO DE SALIDA OBLIGATORIO:
         FILE: ruta/al/archivo
-        (Contenido del archivo aquí)
-        --- (separador si hay múltiples archivos)"
+        (Contenido completo del archivo)
+        ---"
 
         USR="Instrucción: $PROMPT\n\nContexto:\n$FILE_CONTEXT"
         ;;
