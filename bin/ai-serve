@@ -51,6 +51,6 @@ exec "$SERVER_BIN" \
     -ngl 999 \
     --cache-ram 0 \
     --host 0.0.0.0 \
-    -c 4096 \
+    -c 8192 \
     -np 1 \
     -fa

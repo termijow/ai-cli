@@ -99,7 +99,13 @@ call_llm_robust() {
             exit 1
         fi
 
+        # Capturar y validar el contenido extraído por jq
         local content=$(echo "$response" | jq -r '.content // .choices[0].message.content // empty' 2>/dev/null)
+
+        if [[ -z "$content" || "$content" == "null" ]]; then
+            log_error "Error Crítico: La IA devolvió una respuesta vacía o el JSON se rompió. No se realizarán cambios en el archivo."
+            exit 1
+        fi
 
         if validate_content "$content"; then
             echo "$content"
