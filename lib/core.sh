@@ -82,6 +82,20 @@ call_llm_robust() {
     local attempt=1
     local max_attempts=2
 
+    # 1. Verificación de Salud del Servidor
+    local server_check_url
+    if [[ "$API_URL" == *"/v1/"* ]]; then
+        server_check_url=$(echo "$API_URL" | sed 's|/v1/.*||')
+    else
+        server_check_url="$API_URL"
+    fi
+
+    if ! curl -s --connect-timeout 2 "$server_check_url" > /dev/null; then
+        log_error "El servidor LLM no está corriendo. Intentaste conectar a $server_check_url"
+        log_info "Asegúrate de ejecutar 'ai-serve' primero y que el puerto coincida con tu .env."
+        exit 1
+    fi
+
     log_info "Pensando en la solución óptima...."
 
     while [ $attempt -le $max_attempts ]; do
@@ -126,6 +140,12 @@ call_llm_robust() {
 apply_changes() {
     local path="$1" content="$2"
     
+    # 0. Verificación de nulidad
+    if [[ "$content" == "null" || -z "$(echo "$content" | tr -d '[:space:]')" ]]; then
+        log_error "Contenido inválido (null o vacío) recibido para $path. No se guardará nada."
+        exit 1
+    fi
+
     content=$(clean_markdown "$content" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     
     if [[ ${#content} -lt 5 ]]; then

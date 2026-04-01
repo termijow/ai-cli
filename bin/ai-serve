@@ -53,4 +53,4 @@ exec "$SERVER_BIN" \
     --host 0.0.0.0 \
     -c 8192 \
     -np 1 \
-    -fa
+    --flash-attn auto

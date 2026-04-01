@@ -86,7 +86,7 @@ case "$COMMAND" in
 esac
 
 RESPONSE=$(call_llm_robust "$SYS" "$USR")
-[[ -z "$RESPONSE" ]] && exit 1
+[[ -z "$RESPONSE" || "$RESPONSE" == "null" ]] && { log_error "La IA no devolvió contenido válido."; exit 1; }
 
 if [[ "$COMMAND" == "commit" ]]; then
     echo -e "${GREEN}Commit message:${NC} $RESPONSE"
