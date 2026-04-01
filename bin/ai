@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# AI-CLI BIN v5.1 - Intelligent Orchestrator
+# AI-CLI BIN v6.0 - Agent Orchestrator
 # ==============================================================================
 
 SOURCE="${BASH_SOURCE[0]}"
@@ -13,88 +13,45 @@ done
 BIN_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 PROJECT_ROOT="$(dirname "$BIN_DIR")"
 
+# Import core functions
 source "$PROJECT_ROOT/lib/core.sh"
+
+# Initial validations
 check_dependencies
 check_server_health
 
-COMMAND="$1"
-shift
-PROMPT="$*"
+# 1. Al iniciar, ejecutar get_auto_context y mostrar los cuadros de ✓ Read Context
+# 2. Recoger ese contexto en una variable $CONTEXT
+CONTEXT=$(get_auto_context)
 
-# Case mapping for prompt detection
-[[ -z "$PROMPT" ]] && { case "$COMMAND" in commit|review) ;; *) PROMPT="$COMMAND"; COMMAND="auto" ;; esac }
+# 3. Construir el prompt final
+USER_INSTRUCTIONS="$1"
+FINAL_PROMPT="Instrucciones del usuario: $USER_INSTRUCTIONS \n Contexto del proyecto: $CONTEXT"
 
-case "$COMMAND" in
-    commit)
-        DIFF=$(git diff --cached)
-        [[ -z "$DIFF" ]] && DIFF=$(git diff)
-        [[ -z "$DIFF" ]] && { log_error "No hay cambios para committear."; exit 1; }
-        
-        SYS="Eres un experto en Conventional Commits. Genera un mensaje conciso basado en el diff. DEVUELVE SOLO EL MENSAJE (ej: feat(core): add context agent)."
-        USR="Genera un mensaje de commit para estos cambios:\n$DIFF"
-        
-        log_info "Generando mensaje de commit..."
-        RESPONSE=$(call_llm_robust "$SYS" "$USR")
-        [[ -z "$RESPONSE" ]] && exit 1
-        
-        echo -e "${GREEN}Mensaje propuesto:${NC} $RESPONSE"
-        read -p "¿Ejecutar git commit -m '$RESPONSE'? (y/n): " confirm
-        if [[ "$confirm" == "y" ]]; then
-            git commit -m "$RESPONSE"
-            log_success "¡Commit realizado!"
-        else
-            log_warn "Commit cancelado."
-        fi
-        exit 0
-        ;;
-    review)
-        DIFF=$(git diff)
-        SYS="You are a senior software architect. Analyze the diff for potential bugs, security flaws, and performance issues. Provide actionable feedback in markdown."
-        USR="Review this diff:\n$DIFF"
-        ;;
-    *)
-        # Auto-Context Agent Logic
-        log_info "Auto-Context Agent activado..."
-        A_CONTEXT=$(get_auto_context)
-        PMAP=$(find . -maxdepth 2 -not -path '*/.*' -not -path './node_modules*')
-        
-        FILES=$(detect_paths "$PROMPT")
-        FILE_CONTEXT=""
-        for f in $FILES; do 
-            if [[ -f "$f" ]]; then 
-                draw_read_box "$f"
-                FILE_CONTEXT="${FILE_CONTEXT}\nFILE: $f\n$(cat "$f")\n"
-            fi
-        done
+# 4. Llamar a call_llm_robust
+RESPONSE=$(call_llm_robust "$(get_base_sys_prompt)" "$FINAL_PROMPT")
 
-        SYS="$(get_base_sys_prompt)
-        
-        CONTEXTO AUTOMÁTICO:
-        $A_CONTEXT
-        
-        MAPA DEL PROYECTO:
-        $PMAP"
-
-        USR="Instrucción: $PROMPT\n\nContexto de archivos:\n$FILE_CONTEXT"
-        ;;
-esac
-
-RESPONSE=$(call_llm_robust "$SYS" "$USR")
-[[ -z "$RESPONSE" || "$RESPONSE" == "null" ]] && { log_error "La IA no devolvió contenido válido."; exit 1; }
-
-if [[ "$COMMAND" == "commit" ]]; then
-    echo -e "${GREEN}Commit message:${NC} $RESPONSE"
-    read -p "Apply commit? (y/n): " c; [[ "$c" == "y" ]] && git commit -m "$RESPONSE"
-elif [[ "$COMMAND" == "review" ]]; then
-    echo -e "$RESPONSE"
-else
-    # Improved block parsing
-    echo "$RESPONSE" | awk 'BEGIN{RS="---"}{gsub(/^[ \n]+|[ \n]+$/,"",$0); if(length>0) print $0 "\n---END_BLOCK---"}' | while read -r -d $'\n' line; do
-        if [[ "$line" != "---END_BLOCK---" ]]; then BLOCK="${BLOCK}${line}\n"; continue; fi
-        F_PATH=$(echo -e "$BLOCK" | grep "^FILE:" | head -n 1 | sed 's/^FILE:[[:space:]]*//')
-        F_CONTENT=$(echo -e "$BLOCK" | sed '1d')
-        [[ -n "$F_PATH" ]] && apply_changes "$F_PATH" "$F_CONTENT"
-        BLOCK=""
-    done
+# 5. Protección Crítica
+if [[ "$RESPONSE" == "null" || -z "$RESPONSE" ]]; then
+    echo -e "${RED}❌ Error: La respuesta de la IA fue nula.${NC}"
+    exit 1
 fi
 
+# 6. Si hay respuesta válida, llamar a apply_changes
+# Procesar bloques delimitados por --- para extraer FILE: path y su contenido
+echo "$RESPONSE" | awk 'BEGIN{RS="---"}{gsub(/^[ \n]+|[ \n]+$/,"",$0); if(length>0) print $0 "\n---END_BLOCK---"}' | while read -r -d $'\n' line; do
+    if [[ "$line" != "---END_BLOCK---" ]]; then 
+        BLOCK="${BLOCK}${line}\n"
+        continue
+    fi
+    
+    # Extraer el path del archivo del bloque
+    F_PATH=$(echo -e "$BLOCK" | grep "^FILE:" | head -n 1 | sed 's/^FILE:[[:space:]]*//')
+    # El contenido es el bloque sin la línea del path
+    F_CONTENT=$(echo -e "$BLOCK" | sed '1d')
+    
+    if [[ -n "$F_PATH" ]]; then
+        apply_changes "$F_PATH" "$F_CONTENT"
+    fi
+    BLOCK=""
+done

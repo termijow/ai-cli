@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# AI-CLI Server Orchestrator v5.1
+# AI-CLI Server Orchestrator v6.0 - High Performance & Safety
 # ==============================================================================
 
 # Cargar configuración del .env
@@ -15,42 +15,57 @@ BIN_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 PROJECT_ROOT="$(dirname "$BIN_DIR")"
 
 if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
-    echo "❌ No se encontró el archivo .env en $PROJECT_ROOT"
+    echo "❌ ERROR: No se encontró el archivo .env en $PROJECT_ROOT"
     exit 1
 fi
 
 source "$PROJECT_ROOT/.env"
 
-# --- Validación de Puerto ---
-if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; then
-    echo "⚠️  El puerto $PORT ya está en uso. ¿Ya hay un servidor corriendo?"
-    exit 1
+# Colores y UI Estilo Gemini
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+# 1. Validación de Puerto (Evitar colisiones)
+if command -v lsof >/dev/null ; then
+    if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; then
+        echo -e "${RED}⚠️  ERROR: El puerto $PORT ya está ocupado por otro proceso.${NC}"
+        echo -e "${BLUE}✦ Abortando para evitar colisiones.${NC}"
+        exit 1
+    fi
+elif command -v ss >/dev/null ; then
+    if ss -tuln | grep -q ":$PORT " ; then
+        echo -e "${RED}⚠️  ERROR: El puerto $PORT ya está ocupado por otro proceso.${NC}"
+        echo -e "${BLUE}✦ Abortando para evitar colisiones.${NC}"
+        exit 1
+    fi
 fi
 
-# Resolver rutas con ~ (tilde)
+# 2. Resolución de Rutas
 SERVER_BIN="${LLAMA_PATH/#\~/$HOME}"
-MODEL_SNAPSHOT_PATH="$HOME/.cache/huggingface/hub/models--${MODEL_REPO/--/--}/snapshots"
 
-# Verificaciones
+# Verificación de Binario
 if [[ ! -f "$SERVER_BIN" ]]; then
-    echo "❌ No se encontró el binario de llama-server en: $SERVER_BIN"
+    echo -e "${RED}❌ ERROR: No se encontró llama-server en: $SERVER_BIN${NC}"
     exit 1
 fi
 
-# Intentar encontrar el modelo dinámicamente si no está en una ruta fija
+# Búsqueda Dinámica del Modelo
 MODEL_PATH=$(find "$HOME/.cache/huggingface" -name "$MODEL_FILE" | head -n 1)
 
 if [[ -z "$MODEL_PATH" ]]; then
-    echo "❌ No se encontró el archivo $MODEL_FILE en $HOME/.cache/huggingface. Asegúrate de que esté descargado."
+    echo -e "${RED}❌ ERROR: No se encontró el modelo $MODEL_FILE en el cache.${NC}"
     exit 1
 fi
 
-echo "🚀 Iniciando AI-CLI LLM Server..."
-echo "📍 Puerto: $PORT"
-echo "📦 Modelo: $MODEL_FILE"
-echo "🧠 Memoria de Contexto: 16k tokens"
+# 3. Lanzamiento con Configuración Mandatoria
+echo -e "${BLUE}🚀 Lanzando AI-CLI LLM Server...${NC}"
+echo -e "${BLUE}📍 Puerto: $PORT${NC}"
+echo -e "${BLUE}🧠 Contexto: 16384 (16k)${NC}"
+echo -e "${BLUE}⚡ Flash Attention: auto${NC}"
 
-# Ejecución (exec para reemplazar el proceso actual)
+# Ejecución (usando exec para transferir el proceso)
 exec "$SERVER_BIN" \
     -m "$MODEL_PATH" \
     --port "$PORT" \
