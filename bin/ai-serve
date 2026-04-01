@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# ==============================================================================
+# AI-CLI Server Orchestrator v5.1
+# ==============================================================================
+
+# Cargar configuración del .env
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+BIN_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+PROJECT_ROOT="$(dirname "$BIN_DIR")"
+
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    source "$PROJECT_ROOT/.env"
+else
+    echo "❌ No se encontró el archivo .env en $PROJECT_ROOT"
+    exit 1
+fi
+
+# Resolver rutas con ~ (tilde)
+SERVER_BIN="${LLAMA_PATH/#\~/$HOME}"
+MODEL_SNAPSHOT_PATH="$HOME/.cache/huggingface/hub/models--${MODEL_REPO/--/--}/snapshots"
+
+# Verificaciones
+if [[ ! -f "$SERVER_BIN" ]]; then
+    echo "❌ No se encontró el binario de llama-server en: $SERVER_BIN"
+    exit 1
+fi
+
+# Intentar encontrar el modelo dinámicamente si no está en una ruta fija
+MODEL_PATH=$(find "$HOME/.cache/huggingface" -name "$MODEL_FILE" | head -n 1)
+
+if [[ -z "$MODEL_PATH" ]]; then
+    echo "❌ No se encontró el archivo $MODEL_FILE en $HOME/.cache/huggingface. Asegúrate de que esté descargado."
+    exit 1
+fi
+
+echo "🚀 Iniciando AI-CLI LLM Server..."
+echo "📍 Puerto: $PORT"
+echo "📦 Modelo: $MODEL_FILE"
+echo "🔧 Flags: -ngl 999 --cache-ram 0 --host 0.0.0.0"
+
+# Ejecución (exec para reemplazar el proceso actual)
+exec "$SERVER_BIN" \
+    -m "$MODEL_PATH" \
+    --port "$PORT" \
+    -ngl 999 \
+    --cache-ram 0 \
+    --host 0.0.0.0 \
+    -c 4096 \
+    -np 1 \
+    -fa

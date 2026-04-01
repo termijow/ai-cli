@@ -1,0 +1,7 @@
+# AI-CLI Ignore patterns
+.env
+.ai_backups/
+*.bak
+tmp/
+node_modules/
+.DS_Store

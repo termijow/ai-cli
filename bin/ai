@@ -1,0 +1,110 @@
+#!/bin/bash
+
+# ==============================================================================
+# AI-CLI BIN v5.1 - Intelligent Orchestrator
+# ==============================================================================
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+BIN_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+PROJECT_ROOT="$(dirname "$BIN_DIR")"
+
+source "$PROJECT_ROOT/lib/core.sh"
+check_dependencies
+
+COMMAND="$1"
+shift
+PROMPT="$*"
+
+# Case mapping for prompt detection
+[[ -z "$PROMPT" ]] && { case "$COMMAND" in commit|review) ;; *) PROMPT="$COMMAND"; COMMAND="auto" ;; esac }
+
+case "$COMMAND" in
+    commit)
+        DIFF=$(git diff --cached)
+        [[ -z "$DIFF" ]] && DIFF=$(git diff)
+        [[ -z "$DIFF" ]] && { log_error "No hay cambios para committear."; exit 1; }
+        
+        SYS="Eres un experto en Conventional Commits. Genera un mensaje conciso basado en el diff. DEVUELVE SOLO EL MENSAJE (ej: feat(core): add context agent)."
+        USR="Genera un mensaje de commit para estos cambios:\n$DIFF"
+        
+        log_info "Generando mensaje de commit..."
+        RESPONSE=$(call_llm_robust "$SYS" "$USR")
+        [[ -z "$RESPONSE" ]] && exit 1
+        
+        echo -e "${GREEN}Mensaje propuesto:${NC} $RESPONSE"
+        read -p "¿Ejecutar git commit -m '$RESPONSE'? (y/n): " confirm
+        if [[ "$confirm" == "y" ]]; then
+            git commit -m "$RESPONSE"
+            log_success "¡Commit realizado!"
+        else
+            log_warn "Commit cancelado."
+        fi
+        exit 0
+        ;;
+    review)
+        DIFF=$(git diff)
+        SYS="You are a senior software architect. Analyze the diff for potential bugs, security flaws, and performance issues. Provide actionable feedback in markdown."
+        USR="Review this diff:\n$DIFF"
+        ;;
+    *)
+        # Context Agent Logic
+        log_info "Context Agent activado..."
+        PMAP=$(get_project_map)
+        DYN_CONTEXT=$(get_dynamic_context "$PROMPT")
+        
+        FILES=$(detect_paths "$PROMPT")
+        FILE_CONTEXT=""
+        for f in $FILES; do [[ -f "$f" ]] && FILE_CONTEXT="${FILE_CONTEXT}\nFILE: $f\n$(cat "$f")\n"; done
+
+        # Intent Detection Logic
+        INTENT="modification"
+        [[ "$PROMPT" =~ "crea"|"new"|"generate"|"haz" ]] && INTENT="creation"
+        
+        SYS="Eres un Agente de Contexto Senior de nivel Experto. Tienes acceso a la estructura del proyecto y archivos clave.
+        
+        MAPA DEL PROYECTO ACTUAL:
+        $PMAP
+        
+        CONTEXTO DINÁMICO:
+        $DYN_CONTEXT
+        
+        REGLAS DE ORO:
+        1. DEVUELVE SOLO EL CÓDIGO. NO uses bloques de Markdown (sin \` \` \`). NO des explicaciones.
+        2. Si la tarea requiere >50 líneas, estructura el código con comentarios, modularidad y lógica de producción.
+        3. Prohibido usar la palabra 'null' o devolver bloques vacíos/incompletos.
+        4. Si el archivo es un API Route (route.ts/js), INCLUYE obligatoriamente try/catch y respuestas JSON estandarizadas.
+        5. Proporciona SIEMPRE el archivo COMPLETO y funcional. Sin placeholders ('implement here', etc).
+        
+        FORMATO DE SALIDA:
+        FILE: ruta/al/archivo
+        (Contenido del archivo aquí)
+        --- (separador si hay múltiples archivos)"
+
+        USR="Instrucción: $PROMPT\n\nContexto:\n$FILE_CONTEXT"
+        ;;
+esac
+
+RESPONSE=$(call_llm_robust "$SYS" "$USR")
+[[ -z "$RESPONSE" ]] && exit 1
+
+if [[ "$COMMAND" == "commit" ]]; then
+    echo -e "${GREEN}Commit message:${NC} $RESPONSE"
+    read -p "Apply commit? (y/n): " c; [[ "$c" == "y" ]] && git commit -m "$RESPONSE"
+elif [[ "$COMMAND" == "review" ]]; then
+    echo -e "$RESPONSE"
+else
+    # Improved block parsing
+    echo "$RESPONSE" | awk 'BEGIN{RS="---"}{gsub(/^[ \n]+|[ \n]+$/,"",$0); if(length>0) print $0 "\n---END_BLOCK---"}' | while read -r -d $'\n' line; do
+        if [[ "$line" != "---END_BLOCK---" ]]; then BLOCK="${BLOCK}${line}\n"; continue; fi
+        F_PATH=$(echo -e "$BLOCK" | grep "^FILE:" | head -n 1 | sed 's/^FILE:[[:space:]]*//')
+        F_CONTENT=$(echo -e "$BLOCK" | sed '1d')
+        [[ -n "$F_PATH" ]] && apply_changes "$F_PATH" "$F_CONTENT"
+        BLOCK=""
+    done
+fi
+
