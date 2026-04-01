@@ -15,6 +15,7 @@ PROJECT_ROOT="$(dirname "$BIN_DIR")"
 
 source "$PROJECT_ROOT/lib/core.sh"
 check_dependencies
+check_server_health
 
 COMMAND="$1"
 shift
@@ -52,36 +53,29 @@ case "$COMMAND" in
         USR="Review this diff:\n$DIFF"
         ;;
     *)
-        # Context Agent Logic
-        log_info "Context Agent activado..."
-        PMAP=$(get_project_map)
-        DYN_CONTEXT=$(get_dynamic_context "$PROMPT")
+        # Auto-Context Agent Logic
+        log_info "Auto-Context Agent activado..."
+        A_CONTEXT=$(get_auto_context)
+        PMAP=$(find . -maxdepth 2 -not -path '*/.*' -not -path './node_modules*')
         
         FILES=$(detect_paths "$PROMPT")
         FILE_CONTEXT=""
-        for f in $FILES; do [[ -f "$f" ]] && FILE_CONTEXT="${FILE_CONTEXT}\nFILE: $f\n$(cat "$f")\n"; done
+        for f in $FILES; do 
+            if [[ -f "$f" ]]; then 
+                draw_read_box "$f"
+                FILE_CONTEXT="${FILE_CONTEXT}\nFILE: $f\n$(cat "$f")\n"
+            fi
+        done
 
-        # Intent Detection Logic
-        INTENT="modification"
-        [[ "$PROMPT" =~ "crea"|"new"|"generate"|"haz" ]] && INTENT="creation"
+        SYS="$(get_base_sys_prompt)
         
-        SYS="Eres un Ingeniero de Software Senior. Tu misión es proporcionar soluciones de código completas, lógicas y listas para producción.
-        Devuelve SOLO el código, sin Markdown.
-        Asegúrate de que el código sea funcional y siga las mejores prácticas del lenguaje detectado.
-        No incluyas comentarios innecesarios, solo código limpio y profesional.
+        CONTEXTO AUTOMÁTICO:
+        $A_CONTEXT
         
-        CONTEXTO DEL PROYECTO:
-        $PMAP
-        
-        CONTEXTO DINÁMICO:
-        $DYN_CONTEXT
-        
-        FORMATO DE SALIDA OBLIGATORIO:
-        FILE: ruta/al/archivo
-        (Contenido completo del archivo)
-        ---"
+        MAPA DEL PROYECTO:
+        $PMAP"
 
-        USR="Instrucción: $PROMPT\n\nContexto:\n$FILE_CONTEXT"
+        USR="Instrucción: $PROMPT\n\nContexto de archivos:\n$FILE_CONTEXT"
         ;;
 esac
 
