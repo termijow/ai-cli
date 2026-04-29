@@ -51,18 +51,20 @@ if [[ ! -f "$SERVER_BIN" ]]; then
     exit 1
 fi
 
-# Búsqueda Dinámica del Modelo
-MODEL_PATH=$(find "$HOME/.cache/huggingface" -name "$MODEL_FILE" | head -n 1)
-
-if [[ -z "$MODEL_PATH" ]]; then
-    echo -e "${RED}❌ ERROR: No se encontró el modelo $MODEL_FILE en el cache.${NC}"
+# Búsqueda del Modelo
+if [[ -f "$HOME/models/$MODEL_FILE" ]]; then
+    MODEL_PATH="$HOME/models/$MODEL_FILE"
+elif [[ -f "./$MODEL_FILE" ]]; then
+    MODEL_PATH="./$MODEL_FILE"
+else
+    echo -e "${RED}❌ ERROR: No se encontró el modelo $MODEL_FILE en $HOME/models/ ni en el directorio actual.${NC}"
     exit 1
 fi
 
 # 3. Lanzamiento con Configuración Mandatoria
 echo -e "${BLUE}🚀 Lanzando AI-CLI LLM Server...${NC}"
 echo -e "${BLUE}📍 Puerto: $PORT${NC}"
-echo -e "${BLUE}🧠 Contexto: 16384 (16k)${NC}"
+echo -e "${BLUE}🧠 Contexto: 32768 (32k)${NC}"
 echo -e "${BLUE}⚡ Flash Attention: auto${NC}"
 
 # Ejecución (usando exec para transferir el proceso)
@@ -70,9 +72,9 @@ exec "$SERVER_BIN" \
     -m "$MODEL_PATH" \
     --port "$PORT" \
     -ngl 999 \
-    --cache-ram 0 \
+    --cache-ram 4096 \
     --host 0.0.0.0 \
-    -c 16384 \
+    -c 32768 \
     --n-predict -1 \
     -np 1 \
     --flash-attn auto \

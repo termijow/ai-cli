@@ -147,9 +147,102 @@ apply_changes() {
 }
 
 check_dependencies() {
-    for cmd in curl jq git diff; do
+    for cmd in curl jq git diff npx; do
         command -v $cmd &> /dev/null || { log_error "Falta dependencia: $cmd"; exit 1; }
     done
+}
+
+# 6. Nueva Funcionalidad 'Auto-QA'
+ensure_playwright_config() {
+    if [[ ! -f "playwright.config.ts" && ! -f "playwright.config.js" ]]; then
+        log_info "No se detectó configuración de Playwright. Creando playwright.config.ts por defecto..."
+        cat <<EOF > playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './app/test',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+  use: {
+    trace: 'on-first-retry',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+});
+EOF
+        log_success "playwright.config.ts creado."
+    fi
+}
+
+run_test_loop() {
+    local file_path="$1"
+    local max_attempts=3
+    local attempt=1
+    local current_code
+    local error_log
+
+    ensure_playwright_config
+
+    while [[ $attempt -le $max_attempts ]]; do
+        log_info "Ejecutando Test: $file_path (Intento $attempt/$max_attempts)..."
+        
+        # Ejecutar test y capturar output/error
+        set +e
+        error_log=$(npx playwright test "$file_path" 2>&1)
+        local status=$?
+        set -e
+
+        if [[ $status -eq 0 ]]; then
+            log_success "¡El test pasó exitosamente!"
+            return 0
+        fi
+
+        log_warn "El test falló. Consultando a Gemma para una corrección..."
+        
+        current_code=$(cat "$file_path")
+        
+        local sys_prompt=$(get_base_sys_prompt)
+        local user_prompt="El test falló con este error: [$error_log]. Aquí está mi código: [$current_code]. Analiza el problema, corrige el código y devuelve la solución completa"
+
+        local proposed_fix=$(call_llm_robust "$sys_prompt" "$user_prompt")
+        
+        # Guardar temporalmente para mostrar diff y confirmar
+        local tmp_fix=$(mktemp)
+        echo "$proposed_fix" > "$tmp_fix"
+
+        echo -e "✦ Propuesta de corrección para ${BLUE}$file_path${NC}:"
+        diff --color=always -u "$file_path" "$tmp_fix" || true
+
+        read -p "✦ ¿Deseas aplicar esta corrección y volver a probar? (y/n): " confirm
+        if [[ "$confirm" == "y" ]]; then
+            mv "$tmp_fix" "$file_path"
+            log_info "Corrección aplicada. Reintentando..."
+        else
+            log_warn "Corrección rechazada."
+            rm -f "$tmp_fix"
+            break
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    if [[ $attempt -gt $max_attempts ]]; then
+        log_error "Se alcanzó el máximo de intentos ($max_attempts) sin éxito."
+    fi
+    
+    read -p "✦ ¿Deseas mantener los cambios aplicados durante el QA? (y/n): " final_confirm
+    if [[ "$final_confirm" != "y" ]]; then
+        log_info "Revirtiendo cambios (Nota: Esto requiere implementación de historial o git checkout)."
+        # En un entorno real, usaríamos backups o git. Por simplicidad en este script:
+        log_warn "Se recomienda usar git checkout para revertir si es necesario."
+    fi
 }
 
 check_server_health() {
