@@ -74,7 +74,7 @@ exec "$SERVER_BIN" \
     -ngl 999 \
     --cache-ram 4096 \
     --host 0.0.0.0 \
-    -c 32768 \
+    -c 16384 \
     --n-predict -1 \
     -np 1 \
     --flash-attn auto \

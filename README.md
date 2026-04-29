@@ -92,3 +92,4 @@ El archivo `.env` en la raíz del proyecto controla el comportamiento del agente
 ---
 
 *Inspirado por Gemini CLI. Potenciado por llama.cpp.*
+Hola Mundo
