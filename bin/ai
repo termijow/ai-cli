@@ -1,57 +1,40 @@
 #!/bin/bash
 
-# ==============================================================================
-# AI-CLI BIN v6.0 - Agent Orchestrator
-# ==============================================================================
+# Cargar .env
+ENV_FILE="$HOME/Documents/ai-cli/.env"
+source "$ENV_FILE"
 
-SOURCE="${BASH_SOURCE[0]}"
-while [ -h "$SOURCE" ]; do
-  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-BIN_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
-PROJECT_ROOT="$(dirname "$BIN_DIR")"
-
-# Import core functions
-source "$PROJECT_ROOT/lib/core.sh"
-
-# Initial validations
-check_dependencies
-check_server_health
-
-# 1. Al iniciar, ejecutar get_auto_context y mostrar los cuadros de ✓ Read Context
-# 2. Recoger ese contexto en una variable $CONTEXT
-CONTEXT=$(get_auto_context)
-
-# 3. Construir el prompt final
-USER_INSTRUCTIONS="$1"
-FINAL_PROMPT="Instrucciones del usuario: $USER_INSTRUCTIONS \n Contexto del proyecto: $CONTEXT"
-
-# 4. Llamar a call_llm_robust
-RESPONSE=$(call_llm_robust "$(get_base_sys_prompt)" "$FINAL_PROMPT")
-
-# 5. Protección Crítica
-if [[ "$RESPONSE" == "null" || -z "$RESPONSE" ]]; then
-    echo -e "${RED}❌ Error: La respuesta de la IA fue nula.${NC}"
-    exit 1
-fi
-
-# 6. Si hay respuesta válida, llamar a apply_changes
-# Procesar bloques delimitados por --- para extraer FILE: path y su contenido
-echo "$RESPONSE" | awk 'BEGIN{RS="---"}{gsub(/^[ \n]+|[ \n]+$/,"",$0); if(length>0) print $0 "\n---END_BLOCK---"}' | while read -r -d $'\n' line; do
-    if [[ "$line" != "---END_BLOCK---" ]]; then 
-        BLOCK="${BLOCK}${line}\n"
-        continue
-    fi
+case "$1" in
+  install-model)
+    URL="$2"
+    if [[ -z "$URL" ]]; then echo "❌ Uso: ai install-model [URL]"; exit 1; fi
     
-    # Extraer el path del archivo del bloque
-    F_PATH=$(echo -e "$BLOCK" | grep "^FILE:" | head -n 1 | sed 's/^FILE:[[:space:]]*//')
-    # El contenido es el bloque sin la línea del path
-    F_CONTENT=$(echo -e "$BLOCK" | sed '1d')
+RAW_FILE_NAME=$(basename "$URL")
+FILE_NAME="${RAW_FILE_NAME%%\?*}"
+    REPO_NAME=$(echo "$URL" | cut -d'/' -f4-5)
+
+    echo "⬇️ Descargando $FILE_NAME..."
+    mkdir -p ~/models
+    cd ~/models || exit
+    curl -L -O "$URL"
     
-    if [[ -n "$F_PATH" ]]; then
-        apply_changes "$F_PATH" "$F_CONTENT"
+    if [[ $? -eq 0 ]]; then
+        echo "✅ Descarga exitosa."
+        # Actualizar .env usando sed
+        sed -i "s|^MODEL_FILE=.*|MODEL_FILE=$FILE_NAME|" "$ENV_FILE"
+        sed -i "s|^MODEL_REPO=.*|MODEL_REPO=$REPO_NAME|" "$ENV_FILE"
+        echo "✅ .env actualizado."
+        echo "✅ Modelo instalado y configurado. Reiniciando servidor..."
+        pkill -f llama-server
+        ai-serve &
+    else
+        echo "❌ Error: Descarga fallida. Borrando incompleto."
+        rm -f "$FILE_NAME"
+        exit 1
     fi
-    BLOCK=""
-done
+    ;;
+  *)
+    # Aquí iría tu lógica normal de chat/edición de ai-cli
+    ~/Documents/ai-cli/lib/core.sh "$@"
+    ;;
+esac
