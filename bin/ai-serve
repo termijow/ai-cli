@@ -71,7 +71,7 @@ echo -e "${BLUE}⚡ Flash Attention: auto${NC}"
 exec "$SERVER_BIN" \
     -m "$MODEL_PATH" \
     --port "$PORT" \
-    -ngl 25 \
+    -ngl 900 \
     --cache-ram 4096 \
     --host 0.0.0.0 \
     -c 16384 \
