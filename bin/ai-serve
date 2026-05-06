@@ -78,4 +78,6 @@ exec "$SERVER_BIN" \
     --n-predict -1 \
     -np 1 \
     --flash-attn auto \
+    --chat-template chatml \
+    --alias gemma4 \
     "$@"
