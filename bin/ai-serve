@@ -70,14 +70,18 @@ echo -e "${BLUE}⚡ Flash Attention: auto${NC}"
 # Ejecución (usando exec para transferir el proceso)
 exec "$SERVER_BIN" \
     -m "$MODEL_PATH" \
-    --port "$PORT" \
-    -ngl 900 \
-    --cache-ram 4096 \
     --host 0.0.0.0 \
-    -c 131072 \
+    --port "$PORT" \
+    --jinja \
+    --gpu-layers 999 \
+    --ctx-size 131072 \
+    --parallel 1 \
+    --batch-size 2048 \
+    --ubatch-size 1024 \
+    --flash-attn on \
+    --cache-ram 16384 \
+    --context-shift \
     --n-predict -1 \
-    -np 1 \
-    --flash-attn auto \
-    --chat-template chatml \
-    --alias gemma4 \
+    --reasoning-format none \
+    --alias localmodel \
     "$@"
