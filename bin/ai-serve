@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# ==============================================================================
-# AI-CLI Server Orchestrator v8.0 - EXTREME CPU PERFORMANCE MODE
-# ==============================================================================
-
 # 1. Cargar configuración del .env
 SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ENV_FILE="$SOURCE_DIR/../.env"
@@ -29,63 +25,37 @@ MODELS_DIR="$HOME/models"
 
 # 3. Validación de Puerto
 PORT=${PORT:-8081}
-if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; then
-    echo -e "${RED}⚠️  ERROR: Puerto $PORT ocupado.${NC}"
-    exit 1
-fi
 
-# 4. Configuración EXTREMA (90% CPU)
-# Usamos el 100% de los hilos lógicos (nproc)
+# 4. Configuración de Hilos (12 detectados en tu sistema)
 OPTIMIZED_THREADS=$(nproc)
 
-# 5. Detección de Hardware
-HAS_GPU=false
-NGL=0
-if command -v nvidia-smi &> /dev/null; then
-    HAS_GPU=true
-    GPU_TYPE="NVIDIA (CUDA)"
-    NGL=999
-elif command -v vulkaninfo &> /dev/null || clinfo &> /dev/null; then
-    HAS_GPU=true
-    GPU_TYPE="AMD/Integrated (Vulkan/OpenCL)"
-    NGL=999
-fi
-
-# 6. Localizar Modelo
+# 5. Localizar Modelo
 MODEL_PATH=$(find "$MODELS_DIR" "$HOME/.cache/huggingface" -name "$MODEL_FILE" 2>/dev/null | head -n 1)
 
-if [[ -z "$MODEL_PATH" || ! -f "$MODEL_PATH" ]]; then
-    echo -e "${RED}❌ ERROR: No se encontró $MODEL_FILE${NC}"
-    exit 1
-fi
-
-# 7. Interfaz
+# 6. Interfaz de inicio
 echo -e "${RED}╭──────────────────────────────────────────────────────────╮${NC}"
-echo -e "${RED}│${NC} ${YELLOW}🔥 MODO EXTREMO: MÁXIMO RENDIMIENTO CPU ACTIVADO${NC}        ${RED}│${NC}"
+echo -e "${RED}│${NC} ${YELLOW}🔥 MODO EXTREMO V2: OPTIMIZACIÓN DE HILOS (12)           ${NC}${RED}│${NC}"
 echo -e "${RED}├──────────────────────────────────────────────────────────┤${NC}"
 echo -e "${CYAN}│${NC} 📄 Modelo:   ${YELLOW}$MODEL_FILE${NC}"
-echo -e "${CYAN}│${NC} 🧠 Hilos:    ${GREEN}$OPTIMIZED_THREADS (100% Cores)${NC}"
-echo -e "${CYAN}│${NC} ⚡ Prioridad: ${GREEN}Nivel -15 (Máxima)${NC}"
-echo -e "${CYAN}│${NC} 🚀 Optimiz.:  ${GREEN}NUMA dist + Flash Attention${NC}"
+echo -e "${CYAN}│${NC} 🧠 Hilos:    ${GREEN}$OPTIMIZED_THREADS cores lógicos${NC}"
+echo -e "${CYAN}│${NC} 🚀 Optimiz.:  ${GREEN}NUMA Distribute + Flash Attention${NC}"
 echo -e "${RED}╰──────────────────────────────────────────────────────────╯${NC}"
 
-# 8. Ejecución con Prioridad Máxima y NUMA
-# --numa dist: Optimiza el acceso a la memoria para procesadores modernos.
-# --threads / --threads-batch: Usamos el total de hilos.
-# --batch-size 2048: Aumenta la carga de trabajo por ciclo.
+# 7. Ejecución Directa (Sin nice para evitar Permission Denied)
+# Corregido --numa a 'distribute'
+# Mantenemos --prio 3 para prioridad interna de hilos
 
-exec nice -n -15 "$REAL_LLAMA_PATH" \
+exec "$REAL_LLAMA_PATH" \
     --model "$MODEL_PATH" \
     --port "$PORT" \
     --threads "$OPTIMIZED_THREADS" \
     --threads-batch "$OPTIMIZED_THREADS" \
     --ctx-size 16384 \
     --n-predict -1 \
-    --n-gpu-layers "$NGL" \
     --batch-size 2048 \
     --ubatch-size 512 \
     --prio 3 \
-    --numa dist \
+    --numa distribute \
     --flash-attn auto \
     --no-mmap \
     --cache-ram 0 \
