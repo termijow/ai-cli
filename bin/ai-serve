@@ -1,88 +1,106 @@
 #!/bin/bash
 
 # ==============================================================================
-# AI-CLI Server Orchestrator v6.0 - High Performance & Safety
+# AI-CLI Server Orchestrator v7.5 - Optimized for Laptop & Desktop
 # ==============================================================================
 
-# Cargar configuración del .env
-SOURCE="${BASH_SOURCE[0]}"
-while [ -h "$SOURCE" ]; do
-  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-BIN_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
-PROJECT_ROOT="$(dirname "$BIN_DIR")"
+# 1. Cargar configuración del .env
+SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+ENV_FILE="$SOURCE_DIR/../.env"
 
-if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
-    echo "❌ ERROR: No se encontró el archivo .env en $PROJECT_ROOT"
+if [[ -f "$ENV_FILE" ]]; then
+    # Cargamos las variables
+    export $(grep -v '^#' "$ENV_FILE" | xargs)
+else
+    echo "❌ ERROR: No se encontró el archivo .env en $SOURCE_DIR/.."
     exit 1
 fi
 
-source "$PROJECT_ROOT/.env"
-
-# Colores y UI Estilo Gemini
+# Colores
 BLUE='\033[0;34m'
-RED='\033[0;31m'
+CYAN='\033[0;36m'
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-# 1. Validación de Puerto (Evitar colisiones)
-if command -v lsof >/dev/null ; then
-    if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; then
-        echo -e "${RED}⚠️  ERROR: El puerto $PORT ya está ocupado por otro proceso.${NC}"
-        echo -e "${BLUE}✦ Abortando para evitar colisiones.${NC}"
-        exit 1
-    fi
-elif command -v ss >/dev/null ; then
-    if ss -tuln | grep -q ":$PORT " ; then
-        echo -e "${RED}⚠️  ERROR: El puerto $PORT ya está ocupado por otro proceso.${NC}"
-        echo -e "${BLUE}✦ Abortando para evitar colisiones.${NC}"
-        exit 1
-    fi
-fi
+# 2. Expandir rutas (para que el ~ funcione correctamente)
+REAL_LLAMA_PATH="${LLAMA_PATH/#\~/$HOME}"
+MODELS_DIR="$HOME/models"
 
-# 2. Resolución de Rutas
-SERVER_BIN="${LLAMA_PATH/#\~/$HOME}"
-
-# Verificación de Binario
-if [[ ! -f "$SERVER_BIN" ]]; then
-    echo -e "${RED}❌ ERROR: No se encontró llama-server en: $SERVER_BIN${NC}"
+# 3. Validación de Puerto
+PORT=${PORT:-8081}
+if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; then
+    echo -e "${RED}⚠️  ERROR: El puerto $PORT ya está ocupado por otro proceso.${NC}"
     exit 1
 fi
 
-# Búsqueda del Modelo
-if [[ -f "$HOME/models/$MODEL_FILE" ]]; then
-    MODEL_PATH="$HOME/models/$MODEL_FILE"
-elif [[ -f "./$MODEL_FILE" ]]; then
-    MODEL_PATH="./$MODEL_FILE"
+# 4. Configuración Turbo CPU (80-90% de uso)
+TOTAL_CORES=$(nproc)
+if [ "$TOTAL_CORES" -gt 4 ]; then
+    OPTIMIZED_THREADS=$((TOTAL_CORES - 2))
 else
-    echo -e "${RED}❌ ERROR: No se encontró el modelo $MODEL_FILE en $HOME/models/ ni en el directorio actual.${NC}"
+    OPTIMIZED_THREADS=$((TOTAL_CORES - 1))
+fi
+
+# 5. Detección de Aceleración GPU/APU
+HAS_GPU=false
+NGL=0
+if command -v nvidia-smi &> /dev/null; then
+    HAS_GPU=true
+    GPU_TYPE="NVIDIA (CUDA)"
+    NGL=999
+elif command -v vulkaninfo &> /dev/null || clinfo &> /dev/null; then
+    HAS_GPU=true
+    GPU_TYPE="AMD/Integrated (Vulkan/OpenCL)"
+    NGL=999
+fi
+
+# 6. Localizar el archivo del modelo (.gguf)
+# Buscamos primero en ~/models y luego en el cache de HuggingFace
+MODEL_PATH=$(find "$MODELS_DIR" "$HOME/.cache/huggingface" -name "$MODEL_FILE" 2>/dev/null | head -n 1)
+
+if [[ -z "$MODEL_PATH" || ! -f "$MODEL_PATH" ]]; then
+    echo -e "${RED}❌ ERROR: No se encontró el archivo $MODEL_FILE${NC}"
+    echo -e "Asegúrate de haberlo descargado a ~/models o vía 'ai install-model'"
     exit 1
 fi
 
-# 3. Lanzamiento con Configuración Mandatoria
-echo -e "${BLUE}🚀 Lanzando AI-CLI LLM Server...${NC}"
-echo -e "${BLUE}📍 Puerto: $PORT${NC}"
-echo -e "${BLUE}🧠 Contexto: 32768 (32k)${NC}"
-echo -e "${BLUE}⚡ Flash Attention: auto${NC}"
+# 7. Interfaz de inicio
+echo -e "${CYAN}╭──────────────────────────────────────────────────────────╮${NC}"
+echo -e "${CYAN}│${NC} ${GREEN}🚀 AI-CLI ENGINE STATUS${NC}                                 ${CYAN}│${NC}"
+echo -e "${CYAN}├──────────────────────────────────────────────────────────┤${NC}"
+echo -e "${CYAN}│${NC} 📦 Repo:   ${YELLOW}$MODEL_REPO${NC}"
+echo -e "${CYAN}│${NC} 📄 Archivo: ${YELLOW}$MODEL_FILE${NC}"
+if [ "$HAS_GPU" = true ]; then
+    echo -e "${CYAN}│${NC} ⚡ Hardware: ${GREEN}$GPU_TYPE${NC}"
+else
+    echo -e "${CYAN}│${NC} ⚡ Hardware: ${RED}CPU (MODO TURBO ACTIVADO)${NC}"
+fi
+echo -e "${CYAN}│${NC} 🧠 Hilos:   ${GREEN}$OPTIMIZED_THREADS cores${NC} (Uso: 80-90%)           ${CYAN}│${NC}"
+echo -e "${CYAN}│${NC} 🌐 Puerto:  ${BLUE}$PORT${NC}                                      ${CYAN}│${NC}"
+echo -e "${CYAN}╰──────────────────────────────────────────────────────────╯${NC}"
 
-# Ejecución (usando exec para transferir el proceso)
-exec "$SERVER_BIN" \
-    -m "$MODEL_PATH" \
-    --host 0.0.0.0 \
+# 8. Ejecución con prioridad alta
+# Usamos nice -n -5 para dar prioridad sin congelar el SO
+# Flags optimizados:
+# --threads / --threads-batch: Controlan el uso de CPU al 90%
+# --ctx-size: 16k para que aguante archivos largos
+# --n-predict -1: Para que no corte las respuestas
+# --prio 3: Prioridad interna de llama.cpp para los hilos
+
+exec nice -n -5 "$REAL_LLAMA_PATH" \
+    --model "$MODEL_PATH" \
     --port "$PORT" \
-    --jinja \
-    --gpu-layers 999 \
-    --ctx-size 131072 \
-    --parallel 1 \
-    --batch-size 2048 \
-    --ubatch-size 1024 \
-    --flash-attn on \
-    --cache-ram 16384 \
-    --context-shift \
+    --threads "$OPTIMIZED_THREADS" \
+    --threads-batch "$OPTIMIZED_THREADS" \
+    --ctx-size 16384 \
     --n-predict -1 \
-    --no-webui \
-    --reasoning-format none \
-    --alias localmodel \
-    "$@"
+    --n-gpu-layers "$NGL" \
+    --batch-size 512 \
+    --ubatch-size 128 \
+    --prio 3 \
+    --flash-attn auto \
+    --no-mmap \
+    --cache-ram 0 \
+    --host 0.0.0.0
