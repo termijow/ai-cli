@@ -1,40 +1,82 @@
 #!/bin/bash
 
-# Cargar .env
-ENV_FILE="$HOME/Documents/ai-cli/.env"
+# Detectar ubicación del script
+SCRIPT_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+
+# Localizar .env
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    ENV_FILE="$PROJECT_ROOT/.env"
+elif [[ -n "$AI_CLI_ROOT" && -f "$AI_CLI_ROOT/.env" ]]; then
+    ENV_FILE="$AI_CLI_ROOT/.env"
+else
+    echo "❌ ERROR: No se encontró el archivo .env"
+    echo "Buscado en:"
+    echo "  1. $PROJECT_ROOT/.env"
+    [[ -n "$AI_CLI_ROOT" ]] && echo "  2. $AI_CLI_ROOT/.env" || echo "  2. \$AI_CLI_ROOT no está definida"
+    exit 1
+fi
+
 source "$ENV_FILE"
 
-case "$1" in
-  install-model)
-    URL="$2"
-    if [[ -z "$URL" ]]; then echo "❌ Uso: ai install-model [URL]"; exit 1; fi
-    
-RAW_FILE_NAME=$(basename "$URL")
-FILE_NAME="${RAW_FILE_NAME%%\?*}"
-    REPO_NAME=$(echo "$URL" | cut -d'/' -f4-5)
+# --- Lógica de Comandos ---
 
-    echo "⬇️ Descargando $FILE_NAME..."
-    mkdir -p ~/models
-    cd ~/models || exit
-    curl -L -O "$URL"
-    
-    if [[ $? -eq 0 ]]; then
-        echo "✅ Descarga exitosa."
-        # Actualizar .env usando sed
-        sed -i "s|^MODEL_FILE=.*|MODEL_FILE=$FILE_NAME|" "$ENV_FILE"
-        sed -i "s|^MODEL_REPO=.*|MODEL_REPO=$REPO_NAME|" "$ENV_FILE"
-        echo "✅ .env actualizado."
-        echo "✅ Modelo instalado y configurado. Reiniciando servidor..."
-        pkill -f llama-server
-        ai-serve &
-    else
-        echo "❌ Error: Descarga fallida. Borrando incompleto."
-        rm -f "$FILE_NAME"
+install_model() {
+    local URL="$1"
+    if [[ -z "$URL" ]]; then
+        echo "❌ Uso: ai install-model [URL]"
         exit 1
     fi
-    ;;
-  *)
-    # Aquí iría tu lógica normal de chat/edición de ai-cli
-    ~/Documents/ai-cli/lib/core.sh "$@"
-    ;;
+    
+    # 1. Limpiar nombre del archivo (quitar parámetros de URL)
+    local RAW_FILE_NAME=$(basename "$URL")
+    local FILE_NAME="${RAW_FILE_NAME%%\?*}"
+    local REPO_NAME=$(echo "$URL" | cut -d'/' -f4-5)
+
+    echo "⬇️ Descargando $FILE_NAME desde $REPO_NAME..."
+    mkdir -p ~/models
+    
+    if curl -L "$URL" -o "$HOME/models/$FILE_NAME"; then
+        echo "✅ Descarga exitosa: ~/models/$FILE_NAME"
+        
+        # 2. Actualizar .env usando PROJECT_ROOT
+        if [[ -f "$ENV_FILE" ]]; then
+            sed -i "s|^MODEL_FILE=.*|MODEL_FILE=$FILE_NAME|" "$ENV_FILE"
+            sed -i "s|^MODEL_REPO=.*|MODEL_REPO=$REPO_NAME|" "$ENV_FILE"
+            echo "✅ Archivo .env actualizado ($ENV_FILE)"
+        else
+            echo "⚠️ Advertencia: No se pudo actualizar el .env porque no se encontró."
+        fi
+
+        # 3. Reiniciar ai-serve
+        echo "🔄 Reiniciando ai-serve..."
+        pkill -f "llama-server" || true
+        # Buscamos el binario ai-serve en el mismo PROJECT_ROOT/bin
+        if [[ -f "$PROJECT_ROOT/bin/ai-serve" ]]; then
+            "$PROJECT_ROOT/bin/ai-serve" &
+            echo "✅ Servidor reiniciado en segundo plano."
+        else
+            echo "❌ Error: No se encontró ai-serve para reiniciar."
+        fi
+    else
+        echo "❌ Error: La descarga falló."
+        exit 1
+    fi
+}
+
+case "$1" in
+    install-model)
+        install_model "$2"
+        ;;
+    *)
+        # Ejecutar el núcleo de AI-CLI
+        CORE_SH="$PROJECT_ROOT/lib/core.sh"
+        if [[ -f "$CORE_SH" ]]; then
+            "$CORE_SH" "$@"
+        else
+            echo "❌ ERROR: No se encontró $CORE_SH"
+            exit 1
+        fi
+        ;;
 esac

@@ -6,8 +6,21 @@ set -e
 # ==============================================================================
 
 # Cargar configuración del .env
-SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-[[ -f "$SOURCE_DIR/../.env" ]] && source "$SOURCE_DIR/../.env"
+SCRIPT_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    ENV_FILE="$PROJECT_ROOT/.env"
+elif [[ -n "$AI_CLI_ROOT" && -f "$AI_CLI_ROOT/.env" ]]; then
+    ENV_FILE="$AI_CLI_ROOT/.env"
+else
+    # Si no se encuentra el .env, no fallamos aquí porque core.sh 
+    # suele ser llamado por bin/ai que ya lo cargó, pero notificamos si falta.
+    ENV_FILE=""
+fi
+
+[[ -n "$ENV_FILE" ]] && source "$ENV_FILE"
 
 # Colores y UI Estilo Gemini
 RED='\033[0;31m' ; GREEN='\033[0;32m' ; YELLOW='\033[1;33m' ; BLUE='\033[0;34m' ; NC='\033[0m'

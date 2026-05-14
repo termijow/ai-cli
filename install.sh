@@ -1,36 +1,33 @@
 #!/bin/bash
 
-# Function to install the model
-install_model() {
-    local url="$1"
-    local model_name=$(basename "$url" .gguf)
-    local model_repo=$(dirname "$url")
+# Directorio raíz del proyecto
+PROJECT_ROOT=$(pwd)
+BIN_DIR="$HOME/.local/bin"
 
-    # Download the model
-    curl -L -O "$url"
-    if [ $? -ne 0 ]; then
-        echo "Error: Download failed"
-        rm -f "$model_name.gguf"
-        exit 1
+echo "🔧 Instalando AI-CLI..."
+
+# Crear carpeta bin si no existe
+mkdir -p "$BIN_DIR"
+
+# Crear enlaces simbólicos usando ln -sf (sobreescribe si ya existe)
+ln -sf "$PROJECT_ROOT/bin/ai" "$BIN_DIR/ai"
+ln -sf "$PROJECT_ROOT/bin/ai-serve" "$BIN_DIR/ai-serve"
+
+echo "✅ Enlaces simbólicos creados en $BIN_DIR"
+
+# Añadir AI_CLI_ROOT a .zshrc para que los scripts sepan dónde está la raíz y el .env
+ZSHRC="$HOME/.zshrc"
+if [ -f "$ZSHRC" ]; then
+    if ! grep -q "export AI_CLI_ROOT=" "$ZSHRC"; then
+        echo -e "\n# AI-CLI Root Directory\nexport AI_CLI_ROOT=\"$PROJECT_ROOT\"" >> "$ZSHRC"
+        echo "✅ AI_CLI_ROOT añadido a $ZSHRC"
+    else
+        # Actualizar la ruta si ya existe por si se movió el repo
+        sed -i "s|export AI_CLI_ROOT=.*|export AI_CLI_ROOT=\"$PROJECT_ROOT\"|" "$ZSHRC"
+        echo "🔄 AI_CLI_ROOT actualizado en $ZSHRC"
     fi
+else
+    echo "⚠️ No se encontró .zshrc, asegúrate de añadir export AI_CLI_ROOT=\"$PROJECT_ROOT\" manualmente."
+fi
 
-    # Move the model to the models directory
-    mkdir -p ~/models
-    mv "$model_name.gguf" ~/models/
-
-    # Update .env file
-    sed -i "s/^MODEL_FILE=.*/MODEL_FILE=$model_name.gguf/" ~/.env
-    sed -i "s/^MODEL_REPO=.*/MODEL_REPO=$model_repo/" ~/.env
-
-    # Restart the server
-    ./bin/ai-serve
-    if [ $? -ne 0 ]; then
-        echo "Error: Server restart failed"
-        exit 1
-    fi
-
-    echo "✅ Modelo instalado y configurado. Reiniciando servidor..."
-}
-
-# Execute the install_model function with the URL provided as an argument
-install_model "$1"
+echo "🚀 Instalación completada. Reinicia tu terminal o ejecuta: source ~/.zshrc"

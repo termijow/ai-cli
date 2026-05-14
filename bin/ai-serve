@@ -1,15 +1,23 @@
 #!/bin/bash
 
-# 1. Cargar configuración del .env
-SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-ENV_FILE="$SOURCE_DIR/../.env"
+# 1. Detectar ubicación y cargar configuración del .env
+SCRIPT_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
 
-if [[ -f "$ENV_FILE" ]]; then
-    export $(grep -v '^#' "$ENV_FILE" | xargs)
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    ENV_FILE="$PROJECT_ROOT/.env"
+elif [[ -n "$AI_CLI_ROOT" && -f "$AI_CLI_ROOT/.env" ]]; then
+    ENV_FILE="$AI_CLI_ROOT/.env"
 else
     echo "❌ ERROR: No se encontró el archivo .env"
+    echo "Buscado en:"
+    echo "  1. $PROJECT_ROOT/.env"
+    [[ -n "$AI_CLI_ROOT" ]] && echo "  2. $AI_CLI_ROOT/.env" || echo "  2. \$AI_CLI_ROOT no está definida"
     exit 1
 fi
+
+export $(grep -v '^#' "$ENV_FILE" | xargs)
 
 # Colores
 BLUE='\033[0;34m'
