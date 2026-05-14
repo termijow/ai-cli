@@ -10,14 +10,95 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
 elif [[ -n "$AI_CLI_ROOT" && -f "$AI_CLI_ROOT/.env" ]]; then
     ENV_FILE="$AI_CLI_ROOT/.env"
 else
-    echo "❌ ERROR: No se encontró el archivo .env"
+    echo -e "\033[0;31m❌ ERROR: No se encontró el archivo .env\033[0m"
     echo "Buscado en:"
     echo "  1. $PROJECT_ROOT/.env"
     [[ -n "$AI_CLI_ROOT" ]] && echo "  2. $AI_CLI_ROOT/.env" || echo "  2. \$AI_CLI_ROOT no está definida"
     exit 1
 fi
 
+# Exportar variables del .env (silenciosamente)
 export $(grep -v '^#' "$ENV_FILE" | xargs)
+
+# 2. Localización Directa e Infalible de llama-server
+REAL_LLAMA_PATH=""
+
+# Orden exacto de búsqueda
+SEARCH_PATHS=(
+    "$HOME/llama.cpp/build/bin/llama-server"
+    "$HOME/llama.cpp/llama-server"
+    "$(command -v llama-server 2>/dev/null)"
+)
+
+for path in "${SEARCH_PATHS[@]}"; do
+    if [[ -n "$path" && -x "$path" ]]; then
+        REAL_LLAMA_PATH="$path"
+        break
+    fi
+done
+
+# 3. Validación de Existencia (Antes de cualquier UI)
+if [[ -z "$REAL_LLAMA_PATH" ]]; then
+    echo -e "\n\033[0;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[0;31m❌ ERROR FATAL: No se encontró el binario 'llama-server'\033[0m"
+    echo -e "\033[0;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "Por favor, realiza una de las siguientes acciones:"
+    echo -e " 1. Instálalo: 'sudo pacman -S llama.cpp'"
+    echo -e " 2. Compílalo en: '~/llama.cpp'"
+    echo -e "\nEl script no puede continuar.\n"
+    exit 1
+fi
+
+# 4. Actualización Silenciosa del .env
+if [[ "$LLAMA_PATH" != "$REAL_LLAMA_PATH" ]]; then
+    sed -i "s|^LLAMA_PATH=.*|LLAMA_PATH=$REAL_LLAMA_PATH|" "$ENV_FILE"
+fi
+
+# --- A partir de aquí, el binario es válido ---
+
+# 5. Detección Pro de GPU (Vulkan)
+GPU_ACTIVE=false
+VULKAN_SUPPORT=false
+GPU_NAME="Ninguna"
+GPU_LAYERS=0
+
+# Verificar si llama-server tiene soporte Vulkan compilado (detección mejorada)
+# Algunos binarios pueden no mostrar 'vulkan' en --help pero sí soportarlo
+if "$REAL_LLAMA_PATH" --help 2>&1 | grep -qiE "vulkan|gpu-layers|ngl"; then
+    VULKAN_SUPPORT=true
+fi
+
+if command -v vulkaninfo &> /dev/null; then
+    # Extraer todos los dispositivos para priorizar la RX 6600
+    ALL_GPUS=$(vulkaninfo --summary | grep "deviceName" | cut -d: -f2 | xargs)
+    
+    if echo "$ALL_GPUS" | grep -qi "RX 6600"; then
+        GPU_NAME="AMD Radeon RX 6600"
+        GPU_ACTIVE=true
+        # Forzar el dispositivo 0 (normalmente la GPU discreta principal)
+        export GGML_VULKAN_DEVICE=0
+    elif echo "$ALL_GPUS" | grep -qi "Iris Xe"; then
+        GPU_NAME="Intel Iris Xe"
+        GPU_ACTIVE=true
+        export GGML_VULKAN_DEVICE=0
+    elif vulkaninfo --summary | grep -qi "Device Type.*Discrete"; then
+        GPU_NAME=$(vulkaninfo --summary | grep -A 1 "Discrete GPU" | grep "deviceName" | cut -d: -f2 | xargs)
+        GPU_ACTIVE=true
+        export GGML_VULKAN_DEVICE=0
+    fi
+fi
+
+# Configuración de capas GPU (Forzar si hay sospecha de soporte)
+if [[ "$GPU_ACTIVE" == "true" ]]; then
+    GPU_LAYERS=999
+    echo -e "\033[1;32m🚀 Hardware detectado: $GPU_NAME. Forzando offloading de capas (NGL 999)...\033[0m"
+fi
+
+# Sugerencia de rendimiento
+if [[ "$GPU_ACTIVE" == "true" && "$VULKAN_SUPPORT" == "false" ]]; then
+    echo -e "\033[1;33m💡 Sugerencia: Se detectó una $GPU_NAME pero llama-server no tiene soporte Vulkan.\033[0m"
+    echo -e "\033[1;33m   Recompila llama.cpp con -DGGML_VULKAN=1 para usar tu GPU.\033[0m"
+fi
 
 # Colores
 BLUE='\033[0;34m'
@@ -27,44 +108,50 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# 2. Rutas
-REAL_LLAMA_PATH="${LLAMA_PATH/#\~/$HOME}"
+# Directorios y Puerto
 MODELS_DIR="$HOME/models"
-
-# 3. Validación de Puerto
 PORT=${PORT:-8081}
 
-# 4. Configuración de Hilos (12 detectados en tu sistema)
+# Configuración de Hilos
 OPTIMIZED_THREADS=$(nproc)
 
-# 5. Localizar Modelo
+# Localizar Modelo
 MODEL_PATH=$(find "$MODELS_DIR" "$HOME/.cache/huggingface" -name "$MODEL_FILE" 2>/dev/null | head -n 1)
 
-# 6. Interfaz de inicio
+if [[ -z "$MODEL_PATH" ]]; then
+    echo -e "${RED}❌ ERROR: No se encontró el modelo $MODEL_FILE${NC}"
+    echo -e "Buscado en $MODELS_DIR y ~/.cache/huggingface"
+    exit 1
+fi
+
+# Interfaz de inicio
+GPU_STATUS="${RED}Inactiva (CPU)${NC}"
+[[ "$GPU_ACTIVE" == "true" ]] && GPU_STATUS="${GREEN}Activa ($GPU_NAME)${NC}"
+
 echo -e "${RED}╭──────────────────────────────────────────────────────────╮${NC}"
-echo -e "${RED}│${NC} ${YELLOW}🔥 MODO EXTREMO V2: OPTIMIZACIÓN DE HILOS (12)           ${NC}${RED}│${NC}"
+echo -e "${RED}│${NC} ${YELLOW}🔥 MODO EXTREMO V2: OPTIMIZACIÓN DE HILOS ($OPTIMIZED_THREADS)           ${NC}${RED}│${NC}"
 echo -e "${RED}├──────────────────────────────────────────────────────────┤${NC}"
 echo -e "${CYAN}│${NC} 📄 Modelo:   ${YELLOW}$MODEL_FILE${NC}"
 echo -e "${CYAN}│${NC} 🧠 Hilos:    ${GREEN}$OPTIMIZED_THREADS cores lógicos${NC}"
-echo -e "${CYAN}│${NC} 🚀 Optimiz.:  ${GREEN}NUMA Distribute + Flash Attention${NC}"
+echo -e "${CYAN}│${NC} 🚀 GPU:      $GPU_STATUS${NC}"
+echo -e "${CYAN}│${NC} 🛠️ Binario:   ${BLUE}$REAL_LLAMA_PATH${NC}"
 echo -e "${RED}╰──────────────────────────────────────────────────────────╯${NC}"
 
-# 7. Ejecución Directa (Sin nice para evitar Permission Denied)
-# Corregido --numa a 'distribute'
-# Mantenemos --prio 3 para prioridad interna de hilos
-
+# Ejecución Directa
 exec "$REAL_LLAMA_PATH" \
     --model "$MODEL_PATH" \
     --port "$PORT" \
     --threads "$OPTIMIZED_THREADS" \
     --threads-batch "$OPTIMIZED_THREADS" \
-    --ctx-size 16384 \
+    --n-gpu-layers "$GPU_LAYERS" \
+    --ctx-size 8192 \
     --n-predict -1 \
-    --batch-size 2048 \
+    --batch-size 512 \
     --ubatch-size 512 \
+    # --kv-type f16 \
+    --no-context-shift \
     --prio 3 \
     --numa distribute \
     --flash-attn auto \
-    --no-mmap \
     --cache-ram 0 \
     --host 0.0.0.0
