@@ -62,7 +62,7 @@ case "$AI_HARDWARE_MODE" in
         CTX_SIZE=32768
         BATCH_SIZE=2048
         UBATCH_SIZE=1024
-        EXTRA_FLAGS="--jinja --flash-attn on --parallel 1 --cache-ram 16384 --context-shift --alias localmodel"
+        EXTRA_FLAGS="--jinja --flash-attn on --parallel 1 --cache-ram 16384 --context-shift --alias localmodel --reasoning-format none --predict -1"
         echo -e "\033[1;32m🚀 MODO AMD ROCm ACTIVO (RX 6600)\033[0m"
         ;;
     INTEL)

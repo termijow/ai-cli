@@ -10,12 +10,12 @@ export HIP_PATH=$ROCM_PATH
 export PATH=$ROCM_PATH/bin:$PATH
 export LD_LIBRARY_PATH=$ROCM_PATH/lib:$LD_LIBRARY_PATH
 
-# Configuración CMake para RX 6600 (gfx1032)
-echo "Configurando CMake para ROCm (RX 6600)..."
+# Configuración CMake para RX 6600 (Usando gfx1030 para compatibilidad con rocBLAS en Arch)
+echo "Configurando CMake para ROCm (gfx1030)..."
 # La opción correcta es GGML_HIP=ON en versiones recientes
 cmake -S ~/llama.cpp -B ~/llama.cpp/build \
     -DGGML_HIP=ON \
-    -DCMAKE_HIP_ARCHITECTURES=gfx1032 \
+    -DCMAKE_HIP_ARCHITECTURES=gfx1030 \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_PREFIX_PATH=/opt/rocm
 

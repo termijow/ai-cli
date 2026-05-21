@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "lmstudio/localmodel",
+  "provider": {
+    "lmstudio": {
+      "baseUrl": "http://127.0.0.1:8081/v1",
+      "models": {
+        "localmodel": {
+          "contextLength": 32768
+        }
+      }
+    }
+  }
+}

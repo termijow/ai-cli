@@ -94,6 +94,25 @@ call_llm_robust() {
 
     local content
     content=$(jq -r '.choices[0].message.content // empty' "$tmp_res" 2>/dev/null)
+
+    # Sistema de registro de ahorro económico
+    local prompt_tokens=$(jq -r '.usage.prompt_tokens // 0' "$tmp_res" 2>/dev/null)
+    local completion_tokens=$(jq -r '.usage.completion_tokens // 0' "$tmp_res" 2>/dev/null)
+    
+    local total_saving
+    total_saving=$(awk "BEGIN {printf \"%.4f\", ($prompt_tokens * 0.000010) + ($completion_tokens * 0.000010)}")
+    
+    local savings_file="$HOME/.ai_cli_savings"
+    if [[ ! -f "$savings_file" ]]; then
+        echo "0" > "$savings_file"
+    fi
+    local current_savings=$(cat "$savings_file")
+    local new_savings
+    new_savings=$(awk "BEGIN {printf \"%.2f\", $current_savings + $total_saving}")
+    echo "$new_savings" > "$savings_file"
+    
+    echo -e "\033[0;32m💸 Ahorro en esta consulta: \$${total_saving} USD | Total acumulado: \$${new_savings} USD\033[0m" >&2
+
     rm -f "$tmp_res"
 
     # Robustez: Protección Crítica contra 'null'
