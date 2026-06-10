@@ -59,7 +59,7 @@ case "$AI_HARDWARE_MODE" in
         fi
 
         GPU_LAYERS=999
-        CTX_SIZE=64000
+        CTX_SIZE=48000
         BATCH_SIZE=2048
         UBATCH_SIZE=1024
         EXTRA_FLAGS="--jinja --flash-attn on --parallel 1 --cache-ram 16384 --context-shift --alias localmodel --reasoning-format none --predict -1"
@@ -118,5 +118,5 @@ exec "$REAL_LLAMA_PATH" \
     --batch-size "$BATCH_SIZE" \
     --ubatch-size "$UBATCH_SIZE" \
     $EXTRA_FLAGS \
-    # --no-webui \
+    --no-webui \
     --host 0.0.0.0
