@@ -118,5 +118,5 @@ exec "$REAL_LLAMA_PATH" \
     --batch-size "$BATCH_SIZE" \
     --ubatch-size "$UBATCH_SIZE" \
     $EXTRA_FLAGS \
-    --no-webui \
+    # --no-webui \
     --host 0.0.0.0
