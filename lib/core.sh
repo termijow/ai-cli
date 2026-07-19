@@ -284,3 +284,37 @@ check_server_health() {
         exit 1
     fi
 }
+
+# ==============================================================================
+# MAIN EXECUTION
+# ==============================================================================
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    if [[ $# -lt 2 ]]; then
+        echo -e "${RED}❌ Uso: ai \"PROMPT\" archivo1 [archivo2...]${NC}"
+        exit 1
+    fi
+
+    PROMPT="$1"
+    shift
+    FILES="$@"
+
+    check_server_health
+
+    CTX=$(get_auto_context)
+    SYS=$(get_base_sys_prompt)
+
+    for file in $FILES; do
+        log_info "Procesando $file con Qwen..."
+        if [[ -f "$file" ]]; then
+            FILE_CONTENT=$(cat "$file")
+            USER="Contexto Global:\n$CTX\n\nArchivo Actual: $file\nContenido Actual:\n$FILE_CONTENT\n\nInstrucción: $PROMPT\nDevuelve solo el código modificado, sin bloques markdown ni texto extra."
+        else
+            USER="Contexto Global:\n$CTX\n\nDebes crear un nuevo archivo en: $file\n\nInstrucción: $PROMPT\nDevuelve solo el código del archivo nuevo, sin bloques markdown extra ni explicaciones."
+        fi
+        
+        NEW_CODE=$(call_llm_robust "$SYS" "$USER")
+        apply_changes "$file" "$NEW_CODE"
+    done
+fi
+
