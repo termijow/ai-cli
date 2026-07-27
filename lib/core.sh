@@ -100,7 +100,7 @@ call_llm_robust() {
     local completion_tokens=$(jq -r '.usage.completion_tokens // 0' "$tmp_res" 2>/dev/null)
     
     local total_saving
-    total_saving=$(awk "BEGIN {printf \"%.4f\", ($prompt_tokens * 0.000010) + ($completion_tokens * 0.000010)}")
+    total_saving=$(awk "BEGIN {printf \"%.4f\", ($prompt_tokens * 0.0000050) + ($completion_tokens * 0.0000100)}")
     
     local savings_file="$HOME/.ai_cli_savings"
     if [[ ! -f "$savings_file" ]]; then
@@ -112,6 +112,26 @@ call_llm_robust() {
     echo "$new_savings" > "$savings_file"
     
     echo -e "\033[0;32m💸 Ahorro en esta consulta: \$${total_saving} USD | Total acumulado: \$${new_savings} USD\033[0m" >&2
+
+    # --- Historial de consultas ---
+    local history_dir="$HOME/.ai_cli_history"
+    local history_file="$history_dir/queries.jsonl"
+    
+    # Crear directorio de historial si no existe
+    mkdir -p "$history_dir"
+    
+    # Agregar entrada al historial
+    cat >> "$history_file" << EOF
+{
+  "timestamp": "$timestamp",
+  "query_type": "$query_type",
+  "prompt_tokens": $prompt_tokens,
+  "completion_tokens": $completion_tokens,
+  "savings": $total_saving,
+  "total_savings": $new_savings
+}
+EOF
+    # --- Fin Historial ---
 
     rm -f "$tmp_res"
 

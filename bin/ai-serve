@@ -107,9 +107,25 @@ export HSA_OVERRIDE_GFX_VERSION=10.3.0
 export HSA_NO_SCRATCH_REPLICATE=1
 export LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/hip/lib:$LD_LIBRARY_PATH
 
+EXTRA_FLAGS=(
+    --jinja
+    --flash-attn on
+    --parallel 1
+    --cache-ram 4096
+    --cache-type-k q8_0
+    --cache-type-v q8_0
+    --context-shift
+    --alias localmodel
+    --reasoning-format none
+    --chat-template-kwargs '{"enable_thinking":false}'
+    --predict 4096
+)
+
 # 7. Ejecución Directa (Comando Mandatorio)
+# 7. Ejecución directa
 exec "$REAL_LLAMA_PATH" \
     --model "$MODEL_PATH" \
+    --host 0.0.0.0 \
     --port "$PORT" \
     --threads "$OPTIMIZED_THREADS" \
     --threads-batch "$OPTIMIZED_THREADS" \
@@ -117,6 +133,4 @@ exec "$REAL_LLAMA_PATH" \
     --ctx-size "$CTX_SIZE" \
     --batch-size "$BATCH_SIZE" \
     --ubatch-size "$UBATCH_SIZE" \
-    $EXTRA_FLAGS \
-    # --no-webui \
-    --host 0.0.0.0
+    "${EXTRA_FLAGS[@]}"
