@@ -58,7 +58,7 @@ case "$AI_HARDWARE_MODE" in
             exit 1
         fi
 
-        GPU_LAYERS=999
+        GPU_LAYERS=48
         CTX_SIZE=40000
         BATCH_SIZE=2048
         UBATCH_SIZE=1024
