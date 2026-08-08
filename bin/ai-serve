@@ -58,8 +58,8 @@ case "$AI_HARDWARE_MODE" in
             exit 1
         fi
 
-        GPU_LAYERS=30
-        CTX_SIZE=40000
+        GPU_LAYERS=${AI_GPU_LAYERS:-30}
+        CTX_SIZE=${AI_CTX_SIZE:-40000}
         BATCH_SIZE=512
         UBATCH_SIZE=256
         EXTRA_FLAGS="--jinja --flash-attn on --parallel 1 --cache-ram 16384 --context-shift --alias localmodel --reasoning-format none --predict -1"
@@ -119,6 +119,7 @@ EXTRA_FLAGS=(
     --reasoning-format none
     --chat-template-kwargs '{"enable_thinking":false}'
     --predict 4096
+    --no-mmap
 )
 
 # 7. Ejecución Directa (Comando Mandatorio)
