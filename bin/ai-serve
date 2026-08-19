@@ -112,14 +112,15 @@ EXTRA_FLAGS=(
     --flash-attn on
     --parallel 1
     --cache-ram 4096
-    --cache-type-k q8_0
-    --cache-type-v q8_0
+    --cache-type-k q4_0
+    --cache-type-v q4_0
     --context-shift
     --alias localmodel
     --reasoning-format none
     --chat-template-kwargs '{"enable_thinking":false}'
     --predict 4096
     --no-mmap
+    --n-cpu-moe 20
 )
 
 # 7. Ejecución Directa (Comando Mandatorio)
