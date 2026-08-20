@@ -1,28 +1,32 @@
-.PHONY: install install-scripts pre-install clean
+.PHONY: install install-scripts pre-install clean help
 
 install:
-	@echo "Installing AI-CLI..."
-	@mkdir -p ~/.qwen/bin
-	@chmod +x ~/.qwen/bin/chat-launcher.sh
-	@chmod +x ~/.qwen/bin/ai-pre-launch.sh
-	@chmod +x ~/.qwen/bin/chat-history.sh
-	@echo "AI-CLI installed successfully!"
-	@echo "Use: /home/termihoe/llama.cpp/build/bin/llama-server <modelo>"
+	@echo "Installing AI-CLI to ~/.local/bin..."
+	@mkdir -p ~/.local/bin
+	@chmod +x bin/* lib/* presets/* 2>/dev/null || chmod +x bin/* lib/*
+	@for f in bin/*; do \
+		if [ -f "$$f" ]; then \
+			ln -sf "$$(pwd)/$$f" "$$HOME/.local/bin/$$(basename "$$f")"; \
+		fi \
+	done
+	@echo "AI-CLI binaries installed and linked successfully in ~/.local/bin!"
+	@echo "Run 'ai' or 'ai-menu' to launch the TUI interface."
 
 install-scripts:
-	@echo "Installing AI-CLI scripts..."
-	@chmod +x bin/ai-pre-launch.sh
-	@chmod +x bin/chat-launcher.sh
-	@chmod +x bin/llama-wrapper.sh
-	@chmod +x bin/chat-history.sh
-	@echo "Scripts installed!"
+	@echo "Configuring executable permissions..."
+	@chmod +x bin/* lib/*
+	@echo "Scripts configured!"
 
 pre-install:
-	@mkdir -p ~/.qwen/bin
+	@mkdir -p ~/.local/bin presets .ai_backups
 	@echo "Pre-installation complete"
 
 clean:
-	@rm -rf ~/.qwen/history.json ~/.qwen/history.json.bak
 	@rm -rf ~/.ai_cli_savings ~/.ai_cli_history
-	@rm -rf ~/.qwen/bin/chat-launcher.sh ~/.qwen/bin/ai-pre-launch.sh ~/.qwen/bin/chat-history.sh
-	@echo "Cleaned up temporary files"
+	@echo "Cleaned up temporary and history files"
+
+help:
+	@echo "AI-CLI Makefile Targets:"
+	@echo "  make install         - Link all AI-CLI tools to ~/.local/bin"
+	@echo "  make install-scripts - Make all bin and lib scripts executable"
+	@echo "  make clean           - Remove local cache and history"

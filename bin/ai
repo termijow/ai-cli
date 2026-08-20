@@ -52,7 +52,6 @@ install_model() {
         # 3. Reiniciar ai-serve
         echo "🔄 Reiniciando ai-serve..."
         pkill -f "llama-server" || true
-        # Buscamos el binario ai-serve en el mismo PROJECT_ROOT/bin
         if [[ -f "$PROJECT_ROOT/bin/ai-serve" ]]; then
             "$PROJECT_ROOT/bin/ai-serve" &
             echo "✅ Servidor reiniciado en segundo plano."
@@ -65,12 +64,88 @@ install_model() {
     fi
 }
 
+show_status() {
+    local pid=$(pgrep -f "llama-server" | head -n 1)
+    echo -e "\n\033[0;34m╭───────────────────────────────────────────────────╮\033[0m"
+    echo -e "\033[0;34m│\033[0m \033[1;36m🔍 ESTADO DEL SISTEMA AI-CLI\033[0m                      \033[0;34m│\033[0m"
+    echo -e "\033[0;34m├───────────────────────────────────────────────────┤\033[0m"
+    echo -e "\033[0;34m│\033[0m 📦 Modelo Configurado: \033[1;32m$MODEL_FILE\033[0m"
+    if [[ -n "$pid" ]]; then
+        echo -e "\033[0;34m│\033[0m 🖥️  Servidor:           \033[1;32m● ONLINE (PID: $pid)\033[0m"
+        echo -e "\033[0;34m│\033[0m 🌐 Puerto:             \033[1;33m$PORT\033[0m"
+    else
+        echo -e "\033[0;34m│\033[0m 🖥️  Servidor:           \033[1;31m○ OFFLINE (Ejecuta 'ai-serve')\033[0m"
+    fi
+    if command -v rocm-smi &>/dev/null; then
+        local vram_used=$(rocm-smi --showmeminfo vram 2>/dev/null | grep "VRAM Total Used Memory" | head -n 1 | awk '{print $NF}')
+        local vram_total=$(rocm-smi --showmeminfo vram 2>/dev/null | grep "VRAM Total Memory" | head -n 1 | awk '{print $NF}')
+        if [[ -n "$vram_used" && -n "$vram_total" ]]; then
+            local u_gb=$(awk "BEGIN {printf \"%.2f\", $vram_used / (1024*1024*1024)}")
+            local t_gb=$(awk "BEGIN {printf \"%.2f\", $vram_total / (1024*1024*1024)}")
+            echo -e "\033[0;34m│\033[0m 🎮 VRAM GPU (RX 6600):  \033[1;33m${u_gb} GB / ${t_gb} GB\033[0m"
+        fi
+    fi
+    echo -e "\033[0;34m╰───────────────────────────────────────────────────╯\033[0m\n"
+}
+
+# Si se llama sin argumentos, abrir el menú interactivo principal
+if [[ $# -eq 0 ]]; then
+    if [[ -f "$PROJECT_ROOT/bin/ai-menu" ]]; then
+        exec "$PROJECT_ROOT/bin/ai-menu"
+    elif [[ -f "$PROJECT_ROOT/bin/ai-models" ]]; then
+        exec "$PROJECT_ROOT/bin/ai-models"
+    fi
+fi
+
 case "$1" in
-    models|select|menu|ui)
+    menu|tui|dashboard|ui)
+        if [[ -f "$PROJECT_ROOT/bin/ai-menu" ]]; then
+            "$PROJECT_ROOT/bin/ai-menu"
+        else
+            "$PROJECT_ROOT/bin/ai-models"
+        fi
+        ;;
+    models|select|presets|preset|config)
         if [[ -f "$PROJECT_ROOT/bin/ai-models" ]]; then
             "$PROJECT_ROOT/bin/ai-models"
         else
             echo "❌ No se encontró el selector de modelos."
+        fi
+        ;;
+    help|--help|-h)
+        shift
+        if [[ -f "$PROJECT_ROOT/bin/ai-help" ]]; then
+            "$PROJECT_ROOT/bin/ai-help" "$@"
+        else
+            echo "❌ No se encontró el módulo de ayuda."
+        fi
+        ;;
+    serve|start)
+        if [[ -f "$PROJECT_ROOT/bin/ai-serve" ]]; then
+            exec "$PROJECT_ROOT/bin/ai-serve"
+        else
+            echo "❌ No se encontró ai-serve."
+        fi
+        ;;
+    stop)
+        echo "🛑 Deteniendo servidor llama-server..."
+        pkill -f "llama-server" 2>/dev/null || true
+        echo "✓ Servidor detenido."
+        ;;
+    restart)
+        echo "🔄 Reiniciando servidor..."
+        pkill -f "llama-server" 2>/dev/null || true
+        sleep 1
+        if [[ -f "$PROJECT_ROOT/bin/ai-serve" ]]; then
+            exec "$PROJECT_ROOT/bin/ai-serve"
+        fi
+        ;;
+    status)
+        show_status
+        ;;
+    validate)
+        if [[ -f "$PROJECT_ROOT/bin/ai-validate.sh" ]]; then
+            "$PROJECT_ROOT/bin/ai-validate.sh"
         fi
         ;;
     install-model)

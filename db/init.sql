@@ -1,4 +1,4 @@
--- Base de datos de métricas AI-CLI
+-- Base de datos de métricas AI-CLI (valores en COP)
 CREATE TABLE IF NOT EXISTS usage_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT DEFAULT (datetime('now')),
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS config (
     value TEXT
 );
 
--- Insertar datos de configuración iniciales
-INSERT OR REPLACE INTO config (key, value) VALUES 
+-- Insertar datos de configuración iniciales (precios en USD)
+INSERT OR REPLACE INTO config (key, value) VALUES
     ('input_price', '5.00'),
     ('output_price', '25.00');

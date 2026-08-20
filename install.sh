@@ -37,7 +37,7 @@ case $hw_option in
         echo -e "\n✦ Instalando dependencias para AMD ROCm..."
         sudo pacman -S --needed --noconfirm jq curl git base-devel cmake \
             rocm-hip-sdk hip-runtime-amd vulkan-radeon vulkan-headers
-        CMAKE_FLAGS="-DGGML_HIPBLAS=1 -DAMDGPU_TARGETS=gfx1032"
+        CMAKE_FLAGS="-DGGML_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1030 -DCMAKE_PREFIX_PATH=/opt/rocm"
         ;;
     2)
         AI_MODE="INTEL"

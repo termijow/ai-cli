@@ -18,6 +18,11 @@ else
     exit 1
 fi
 
+# Cargar módulo de presets si existe
+if [[ -f "$PROJECT_ROOT/lib/presets.sh" ]]; then
+    source "$PROJECT_ROOT/lib/presets.sh"
+fi
+
 # Colores
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -92,7 +97,6 @@ select_with_fzf() {
     done
 
     # Preview sin bc: usa awk para comparaciones float
-    # Separador " | " con espacios para el awk -F
     local preview_cmd='
         m=$(echo {} | awk -F" [|] " "{print \$3}" | sed "s/^ *//;s/ *$//")
         size_bytes=$(stat -c%s "'"$MODELS_DIR"'/$m" 2>/dev/null || echo 0)
@@ -182,14 +186,38 @@ REC_SIZE=$(echo "$RECS" | cut -d'|' -f1)
 REC_LAYERS=$(echo "$RECS" | cut -d'|' -f2)
 REC_STATUS=$(echo "$RECS" | cut -d'|' -f3)
 
-echo -e "\n${GREEN}✔ Modelo seleccionado:${NC} ${BOLD}$SELECTED_MODEL${NC} ($REC_SIZE GB)\n✦ Recomendación para tu RX 6600 (8GB): ${BOLD}$REC_LAYERS capas en GPU${NC}\n✦ $REC_STATUS"
+# Cargar preset específico del modelo si existe para usarlo como valor por defecto inteligente
+DEFAULT_LAYERS="$REC_LAYERS"
+DEFAULT_CTX=""
+DEFAULT_THINKING=""
+DEFAULT_REASONING=""
+DEFAULT_BATCH=2048
+DEFAULT_UBATCH=512
+DEFAULT_CACHE="f16"
 
-read -p "✦ ¿Cuántas capas en GPU deseas asignar? [$REC_LAYERS]: " custom_layers
-GPU_LAYERS=${custom_layers:-$REC_LAYERS}
+PRESET_FILE=""
+if command -v find_preset_file &>/dev/null; then
+    PRESET_FILE=$(find_preset_file "$SELECTED_MODEL")
+    if [[ -n "$PRESET_FILE" && -f "$PRESET_FILE" ]]; then
+        load_preset_vars "$PRESET_FILE"
+        DEFAULT_LAYERS="${PRESET_GPU_LAYERS:-$REC_LAYERS}"
+        DEFAULT_CTX="${PRESET_CTX_SIZE}"
+        DEFAULT_THINKING="${PRESET_THINKING_LEVEL}"
+        DEFAULT_REASONING="${PRESET_REASONING}"
+        DEFAULT_BATCH="${PRESET_BATCH_SIZE:-2048}"
+        DEFAULT_UBATCH="${PRESET_UBATCH_SIZE:-512}"
+        DEFAULT_CACHE="${PRESET_CACHE_TYPE_K:-f16}"
+    fi
+fi
+
+echo -e "\n${GREEN}✔ Modelo seleccionado:${NC} ${BOLD}$SELECTED_MODEL${NC} ($REC_SIZE GB)\n✦ Recomendación para tu RX 6600 (8GB): ${BOLD}$DEFAULT_LAYERS capas en GPU${NC}\n✦ $REC_STATUS"
+
+read -p "✦ ¿Cuántas capas en GPU deseas asignar? [$DEFAULT_LAYERS]: " custom_layers
+GPU_LAYERS=${custom_layers:-$DEFAULT_LAYERS}
 
 # --- Selector de Contexto ---
 CURRENT_CTX=$(grep "^AI_CTX_SIZE=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-CURRENT_CTX=${CURRENT_CTX:-4096}
+CURRENT_CTX=${DEFAULT_CTX:-${CURRENT_CTX:-4096}}
 
 # Contexto máximo seguro según tamaño del modelo (con KV cache q4_0)
 CTX_TIER=$(awk -v gb="$REC_SIZE" 'BEGIN {
@@ -258,25 +286,11 @@ esac
 
 echo -e "\n${CYAN}📏 Contexto: ${BOLD}${NEW_CTX} tokens${NC}"
 
-# Actualizar .env
-sed -i "s|^MODEL_FILE=.*|MODEL_FILE=$SELECTED_MODEL|" "$ENV_FILE"
-sed -i "s|^AI_GPU_LAYERS=.*|AI_GPU_LAYERS=$GPU_LAYERS|" "$ENV_FILE"
-if grep -q "^AI_CTX_SIZE=" "$ENV_FILE"; then
-    sed -i "s|^AI_CTX_SIZE=.*|AI_CTX_SIZE=$NEW_CTX|" "$ENV_FILE"
-else
-    echo "AI_CTX_SIZE=$NEW_CTX" >> "$ENV_FILE"
-fi
-
-# Si el repo no está configurado, actualizarlo con nombre estándar
-if ! grep -q "^MODEL_REPO=" "$ENV_FILE"; then
-    echo "MODEL_REPO=local/$SELECTED_MODEL" >> "$ENV_FILE"
-fi
-
 # Cargar nivel de thinking actual
 CURRENT_THINKING=$(grep "^AI_THINKING_LEVEL=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
 CURRENT_REASONING=$(grep "^AI_REASONING=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
-CURRENT_THINKING=${CURRENT_THINKING:-high}
-CURRENT_REASONING=${CURRENT_REASONING:-on}
+CURRENT_THINKING=${DEFAULT_THINKING:-${CURRENT_THINKING:-off}}
+CURRENT_REASONING=${DEFAULT_REASONING:-${CURRENT_REASONING:-off}}
 
 echo -e "\n${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
 echo -e "${BLUE}│${NC} ${YELLOW}🧠 NIVEL DE THINKING (Qwen Reasoning Budget)${NC}          ${BLUE}│${NC}"
@@ -293,7 +307,7 @@ read -p "Elige nivel [0-3] (Enter para mantener '${CURRENT_THINKING}'): " thinki
 case "$thinking_opt" in
     0)
         NEW_REASONING="off"
-        NEW_THINKING="low"  # budget ignorado cuando reasoning=off
+        NEW_THINKING="off"
         echo -e "\n${YELLOW}⚡ Thinking DESACTIVADO — Respuestas directas sin razonamiento${NC}"
         ;;
     1)
@@ -314,7 +328,7 @@ case "$thinking_opt" in
     "")
         NEW_REASONING="$CURRENT_REASONING"
         NEW_THINKING="$CURRENT_THINKING"
-        echo -e "\n${CYAN}↩ Sin cambios en thinking level${NC}"
+        echo -e "\n${CYAN}↩ Sin cambios en thinking level (${NEW_THINKING})${NC}"
         ;;
     *)
         NEW_REASONING="$CURRENT_REASONING"
@@ -323,7 +337,15 @@ case "$thinking_opt" in
         ;;
 esac
 
-# Actualizar AI_REASONING y AI_THINKING_LEVEL en .env
+# Actualizar .env
+sed -i "s|^MODEL_FILE=.*|MODEL_FILE=$SELECTED_MODEL|" "$ENV_FILE"
+sed -i "s|^AI_GPU_LAYERS=.*|AI_GPU_LAYERS=$GPU_LAYERS|" "$ENV_FILE"
+if grep -q "^AI_CTX_SIZE=" "$ENV_FILE"; then
+    sed -i "s|^AI_CTX_SIZE=.*|AI_CTX_SIZE=$NEW_CTX|" "$ENV_FILE"
+else
+    echo "AI_CTX_SIZE=$NEW_CTX" >> "$ENV_FILE"
+fi
+
 if grep -q "^AI_REASONING=" "$ENV_FILE"; then
     sed -i "s|^AI_REASONING=.*|AI_REASONING=$NEW_REASONING|" "$ENV_FILE"
 else
@@ -333,11 +355,32 @@ fi
 if grep -q "^AI_THINKING_LEVEL=" "$ENV_FILE"; then
     sed -i "s|^AI_THINKING_LEVEL=.*|AI_THINKING_LEVEL=$NEW_THINKING|" "$ENV_FILE"
 else
-    echo "# Qwen thinking budget: low (~1K tokens), high (~8K), xhigh (~38K)" >> "$ENV_FILE"
     echo "AI_THINKING_LEVEL=$NEW_THINKING" >> "$ENV_FILE"
 fi
 
-echo -e "\n${GREEN}✅ Configuración guardada en .env ($ENV_FILE)${NC}"
+# Si el repo no está configurado, actualizarlo con nombre estándar
+if ! grep -q "^MODEL_REPO=" "$ENV_FILE"; then
+    echo "MODEL_REPO=local/$SELECTED_MODEL" >> "$ENV_FILE"
+fi
+
+# Guardar automáticamente la configuración como preset en presets/
+if command -v save_model_preset &>/dev/null; then
+    # Ajuste dinámico de KV Cache y batch según tamaño
+    if (( $(echo "$REC_SIZE <= 7.0" | awk '{print ($1)?1:0}') )); then
+        KV_CACHE="f16"
+        BATCH=2048
+        UBATCH=512
+        EST_SPEED="60-80 tok/s"
+    else
+        KV_CACHE="q4_0"
+        BATCH=512
+        UBATCH=256
+        EST_SPEED="15-30 tok/s"
+    fi
+    save_model_preset "$SELECTED_MODEL" "Preset Personalizado" "Guardado automáticamente desde ai-models" "$GPU_LAYERS" "$NEW_CTX" "$NEW_REASONING" "$NEW_THINKING" "$BATCH" "$UBATCH" "$KV_CACHE" "$KV_CACHE" "$EST_SPEED"
+fi
+
+echo -e "\n${GREEN}✅ Configuración guardada en .env y sincronizada en presets/ (${SELECTED_MODEL})${NC}"
 
 # Preguntar si reiniciar el servidor
 echo -e "\n${YELLOW}¿Deseas reiniciar 'ai-serve' ahora con el nuevo modelo? (s/n)${NC}"

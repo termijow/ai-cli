@@ -20,21 +20,23 @@ register_usage() {
         output_tokens=0
     fi
     
-    # Calcular costos (precio por 1M tokens = $5 input, $25 output)
-    local input_cost=$(echo "scale=2; $input_tokens / 1000000 * 5" | bc)
-    local output_savings=$(echo "scale=2; $output_tokens / 1000000 * 25" | bc)
-    local total_savings=$(echo "scale=2; $input_cost - $output_savings" | bc)
+    # Calcular costos (precio por 1M tokens = $5 input, $25 output | COP 3500)
+    local input_cost_usd=$(echo "scale=4; $input_tokens / 1000000 * 5" | bc)
+    local output_savings_usd=$(echo "scale=4; $output_tokens / 1000000 * 25" | bc)
+    local input_cost_cop=$(echo "scale=2; $input_cost_usd * 3500" | bc)
+    local output_savings_cop=$(echo "scale=2; $output_savings_usd * 3500" | bc)
+    local total_savings_cop=$(echo "scale=2; $input_cost_cop - $output_savings_cop" | bc)
     
-    # Insertar en BD
+    # Insertar en BD (valores en COP)
     sqlite3 "$HOME/.ai_cli_db.db" <<EOF
 INSERT INTO usage_logs (input_tokens, output_tokens, input_cost, output_savings, total_savings)
-VALUES ($input_tokens, $output_tokens, $input_cost, $output_savings, $total_savings);
+VALUES ($input_tokens, $output_tokens, $input_cost_cop, $output_savings_cop, $total_savings_cop);
 EOF
     
     echo "✅ Registro guardado:"
     echo "   Input: $input_tokens tokens | Output: $output_tokens tokens"
-    echo "   Input Cost: \$$(printf '%.2f' $input_cost) | Output Savings: \$$(printf '%.2f' $output_savings)"
-    echo "   Total Ahorrado: \$$(printf '%.2f' $total_savings)"
+    echo "   Input Cost: COP$$input_cost | Output Savings: COP$$output_savings"
+    echo "   Total Ahorrado: COP$$total_savings"
 }
 
 # Función para mostrar estadísticas
@@ -51,9 +53,9 @@ show_stats() {
     
     echo -e "\033[0;32m│\033[0m \033[1;33mTokens Input Totales:\033[0m \033[1;33m%8s\033[0m       \033[0;32m│\033[0m" "$total_input_tokens"
     echo -e "\033[0;32m│\033[0m \033[1;33mTokens Output Totales:\033[0m \033[1;33m%8s\033[0m       \033[0;32m│\033[0m" "$total_output_tokens"
-    echo -e "\033[0;32m│\033[0m \033[1;33mGasto Input Total:\033[0m \033[1;33m%.2f USD\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' "$total_input_cost")"
-    echo -e "\033[0;32m│\033[0m \033[1;33mAhorro Output Total:\033[0m \033[1;33m%.2f USD\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' "$total_output_savings")"
-    echo -e "\033[0;32m│\033[0m \033[1;32m💰 TOTAL AHORRADO:\033[0m \033[1;32m%.2f USD\033[0m       \033[0;32m│\033[0m" "$(printf '%.2f' "$total_savings")"
+    echo -e "\033[0;32m│\033[0m \033[1;33mGasto Input Total:\033[0m \033[1;33m%.2f COP\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' "$total_input_cost")"
+    echo -e "\033[0;32m│\033[0m \033[1;33mAhorro Output Total:\033[0m \033[1;33m%.2f COP\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' "$total_output_savings")"
+    echo -e "\033[0;32m│\033[0m \033[1;32m💰 TOTAL AHORRADO:\033[0m \033[1;32m%.2f COP\033[0m       \033[0;32m│\033[0m" "$(printf '%.2f' "$total_savings")"
     echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
     
     echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"

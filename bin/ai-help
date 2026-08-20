@@ -1,0 +1,199 @@
+#!/bin/bash
+
+# ==============================================================================
+# AI-CLI HELP & DOCUMENTATION CENTER
+# ==============================================================================
+
+SCRIPT_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+
+# Colores y Estilos
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+show_banner() {
+    echo -e "${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
+    echo -e "${BLUE}│${NC} ${YELLOW}💡 CENTRO DE AYUDA Y GUÍA DE RENDIMIENTO AI-CLI${NC}         ${BLUE}│${NC}"
+    echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+}
+
+topic_commands() {
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}📌 COMANDOS DISPONIBLES EN AI-CLI${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}ai${NC}                       Abre el menú interactivo principal (TUI)."
+    echo -e "  ${GREEN}ai-menu${NC}                  Lanza el panel TUI de control global."
+    echo -e "  ${GREEN}ai-models${NC} (o ${GREEN}ai select${NC})  Selector de modelos con presets y vista previa."
+    echo -e "  ${GREEN}ai-serve${NC}                 Inicia el servidor local llama.cpp con el preset activo."
+    echo -e "  ${GREEN}ai-help${NC} (o ${GREEN}ai help${NC})     Muestra este manual interactivo."
+    echo -e "  ${GREEN}ai-history${NC}               Muestra y exporta el historial de consultas JSONL."
+    echo -e "  ${GREEN}ai-validate.sh${NC}           Verifica dependencias, scripts y configuración."
+    echo -e "  ${GREEN}ai \"instrucción\" archivo${NC}   Modifica o crea archivos usando el LLM local."
+    echo -e "  ${GREEN}ai commit${NC}                Genera mensajes de commit basados en git diff."
+    echo -e "  ${GREEN}ai savings${NC}               Muestra el total ahorrado en USD frente a APIs pagas."
+    echo -e "  ${GREEN}ai stats${NC}                 Estadísticas de tokens y ahorro en BD SQLite."
+    echo -e "  ${GREEN}ai install-model <URL>${NC}   Descarga un archivo .gguf y lo configura en ~/models."
+    echo -e "  ${GREEN}ai status${NC}                Verifica si el servidor está corriendo y uso de GPU."
+    echo -e "  ${GREEN}ai stop / ai restart${NC}     Detiene o reinicia el servidor llama-server."
+    echo ""
+}
+
+topic_presets() {
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}🎯 SISTEMA DE PRESETS POR MODELO (${PROJECT_ROOT}/presets/)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "AI-CLI guarda configuraciones individuales dentro del repositorio para cada modelo:"
+    echo ""
+    echo -e "  ${YELLOW}📂 Ubicación:${NC} ${PROJECT_ROOT}/presets/<nombre_modelo>.conf"
+    echo ""
+    echo -e "  ${BOLD}¿Por qué es importante?${NC}"
+    echo -e "  Si configuras parámetros conservadores para un modelo pesado (35B) para no"
+    echo -e "  congelar el sistema, al cambiar a un modelo ligero (ej. Qwen 3.5 4B) esos"
+    echo -e "  parámetros lo limitarían a ~30 tok/s. Con los presets, cada modelo recuerda"
+    echo -e "  su configuración óptima automáticamente:"
+    echo ""
+    echo -e "  • ${GREEN}Qwen3.5-4B${NC}: Capas 99 (100% VRAM), Ctx 16k, Reasoning off, Cache f16, Batch 2048"
+    echo -e "    ↳ ${BOLD}Velocidad esperada en RX 6600:${NC} ${GREEN}60-80 tok/s${NC} 🚀"
+    echo ""
+    echo -e "  • ${GREEN}Qwen3.5-9B${NC}: Capas 99 (100% VRAM), Ctx 16k-32k, Reasoning high, Cache q4_0"
+    echo -e "    ↳ ${BOLD}Velocidad esperada en RX 6600:${NC} ${YELLOW}35-45 tok/s${NC} ⚡"
+    echo ""
+    echo -e "  • ${GREEN}Qwen3.6-35B / 27B${NC}: Capas 25-35 (Offload a RAM), Ctx 4k, Cache q4_0, Batch 512"
+    echo -e "    ↳ ${BOLD}Modo Seguro:${NC} Evita saturar la memoria del sistema y congelamientos."
+    echo ""
+    echo -e "  ${BOLD}Cómo guardar o editar un preset:${NC}"
+    echo -e "  1. Ejecuta ${GREEN}ai-models${NC}"
+    echo -e "  2. Elige el modelo y selecciona la opción ${YELLOW}'Personalizar parámetros y GUARDAR'${NC}"
+    echo -e "  3. Los cambios quedarán registrados en ${CYAN}presets/<modelo>.conf${NC} dentro del repo."
+    echo ""
+}
+
+topic_hardware() {
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}🏎️ OPTIMIZACIÓN DE HARDWARE: AMD RX 6600 (ROCm / gfx1032)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "Tu AMD Radeon RX 6600 cuenta con 8GB GDDR6 de VRAM."
+    echo ""
+    echo -e "  ${BOLD}Claves para maximizar tokens/segundo:${NC}"
+    echo -e "  1. ${YELLOW}100% Capas en GPU (AI_GPU_LAYERS=99):${NC} Si el modelo pesa < 6.5GB, meterlo"
+    echo -e "     completo a VRAM evita el cuello de botella del bus PCIe y la memoria RAM."
+    echo ""
+    echo -e "  2. ${YELLOW}Formato de KV Cache (AI_CACHE_TYPE_K/V):${NC}"
+    echo -e "     - ${GREEN}f16:${NC} Cero overhead de cálculo. Recomendado para modelos 4B/2B."
+    echo -e "     - ${YELLOW}q4_0:${NC} Reduce el uso de memoria a la mitad. Ideal para modelos 9B con 40k contexto."
+    echo ""
+    echo -e "  3. ${YELLOW}Reasoning / Thinking Level:${NC}"
+    echo -e "     - Si ${GREEN}AI_REASONING=off${NC}: El modelo responde de inmediato sin bucles de pensamiento."
+    echo -e "     - Si ${YELLOW}AI_THINKING_LEVEL=xhigh${NC}: Generará hasta 38K tokens de pensamiento previo."
+    echo ""
+    echo -e "  4. ${YELLOW}Batch Size & UBatch:${NC}"
+    echo -e "     - Para GPU rápida: ${GREEN}AI_BATCH_SIZE=2048${NC} y ${GREEN}AI_UBATCH_SIZE=512${NC} maximiza saturación."
+    echo ""
+}
+
+topic_code_workflow() {
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}🛠️ FLUJO DE DESARROLLO Y EDICIÓN DE CÓDIGO${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "AI-CLI está diseñado como un asistente activo en tu terminal:"
+    echo ""
+    echo -e "  ${BOLD}1. Editar un archivo existente:${NC}"
+    echo -e "     ${GREEN}ai \"refactoriza la función de autenticación con try/catch\" src/auth.ts${NC}"
+    echo -e "     ↳ Muestra un diff interactivo en colores y pide confirmación (y/n)."
+    echo ""
+    echo -e "  ${BOLD}2. Crear un archivo nuevo:${NC}"
+    echo -e "     ${GREEN}ai \"crea un componente de botón accesible con Tailwind\" src/Button.tsx${NC}"
+    echo ""
+    echo -e "  ${BOLD}3. Contexto Automático:${NC}"
+    echo -e "     AI-CLI lee automáticamente archivos clave del proyecto si existen"
+    echo -e "     (ej. package.json, schema.prisma, tailwind.config.ts, globals.css)."
+    echo ""
+    echo -e "  ${BOLD}4. Backups Automáticos:${NC}"
+    echo -e "     Antes de aplicar cambios a cualquier archivo, se guarda una copia en ${CYAN}.ai_backups/${NC}."
+    echo ""
+}
+
+topic_troubleshooting() {
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}🔧 SOLUCIÓN DE PROBLEMAS FRECUENTES (TROUBLESHOOTING)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${RED}• \"El servidor no responde / Status: 000\"${NC}"
+    echo -e "    Solución: Inicia el servidor con ${GREEN}ai-serve${NC} o ${GREEN}ai start${NC} en otra terminal."
+    echo ""
+    echo -e "  ${RED}• \"Rendimiento bajo / 30 tok/s en Qwen 3.5 4B\"${NC}"
+    echo -e "    Solución: Ejecuta ${GREEN}ai-models${NC}, elige Qwen 3.5 4B y aplica el preset recomendado."
+    echo -e "    Verifica que ${YELLOW}AI_REASONING=off${NC} y ${YELLOW}AI_CACHE_TYPE_K=f16${NC}."
+    echo ""
+    echo -e "  ${RED}• \"La PC se congela al cargar modelos de 35B\"${NC}"
+    echo -e "    Solución: Reduce las capas GPU a 25 y el contexto a 4096 tokens con ${GREEN}ai-models${NC}."
+    echo ""
+    echo -e "  ${RED}• \"ROCm no detecta la GPU\"${NC}"
+    echo -e "    Solución: Comprueba que tu usuario pertenezca a los grupos render/video: ${CYAN}groups${NC}."
+    echo ""
+}
+
+show_all() {
+    show_banner
+    topic_commands
+    topic_presets
+    topic_hardware
+    topic_code_workflow
+    topic_troubleshooting
+}
+
+interactive_help() {
+    if command -v fzf &>/dev/null; then
+        local options=(
+            "1. 📌 Comandos Disponibles y Atajos"
+            "2. 🎯 Sistema de Presets en el Repositorio"
+            "3. 🏎️ Optimización RX 6600 (60-80 tok/s)"
+            "4. 🛠️ Flujo de Código y Auto-Contexto"
+            "5. 🔧 Solución de Problemas (Troubleshooting)"
+            "6. 📖 Ver Todo el Manual"
+        )
+        
+        local choice
+        choice=$(printf "%s\n" "${options[@]}" | fzf \
+            --height=50% \
+            --layout=reverse \
+            --border \
+            --prompt="Ayuda AI-CLI > " \
+            --header="Selecciona un tema para consultar (ESC para salir)")
+            
+        case "$choice" in
+            1*) clear ; show_banner ; topic_commands ;;
+            2*) clear ; show_banner ; topic_presets ;;
+            3*) clear ; show_banner ; topic_hardware ;;
+            4*) clear ; show_banner ; topic_code_workflow ;;
+            5*) clear ; show_banner ; topic_troubleshooting ;;
+            6*) clear ; show_all ;;
+            *) exit 0 ;;
+        esac
+    else
+        show_all
+    fi
+}
+
+case "$1" in
+    commands|cmd)
+        show_banner ; topic_commands ;;
+    presets|preset|config)
+        show_banner ; topic_presets ;;
+    hardware|rocm|gpu|speed)
+        show_banner ; topic_hardware ;;
+    workflow|code|dev)
+        show_banner ; topic_code_workflow ;;
+    troubleshooting|errors|fix)
+        show_banner ; topic_troubleshooting ;;
+    --all|-a|all)
+        show_all ;;
+    *)
+        interactive_help ;;
+esac
