@@ -96,9 +96,11 @@ call_llm_robust() {
     content=$(jq -r '.choices[0].message.content // empty' "$tmp_res" 2>/dev/null)
 
     # Sistema de registro de ahorro económico
+    # Pricing actual: Gemini - input $0.0000050/t, output $0.0000100/t
+    # Precio Opus referencia: input $5/1M tokens, output $25/1M tokens
     local prompt_tokens=$(jq -r '.usage.prompt_tokens // 0' "$tmp_res" 2>/dev/null)
     local completion_tokens=$(jq -r '.usage.completion_tokens // 0' "$tmp_res" 2>/dev/null)
-    
+
     local total_saving
     total_saving=$(awk "BEGIN {printf \"%.4f\", ($prompt_tokens * 0.0000050) + ($completion_tokens * 0.0000100)}")
     
@@ -119,7 +121,7 @@ call_llm_robust() {
     
     # Crear directorio de historial si no existe
     mkdir -p "$history_dir"
-    
+
     # Agregar entrada al historial
     cat >> "$history_file" << EOF
 {
@@ -131,6 +133,15 @@ call_llm_robust() {
   "total_savings": $new_savings
 }
 EOF
+
+    # Rotación: mantener solo las últimas 20 entradas
+    local MAX_HISTORY=20
+    local entry_count=$(wc -l < "$history_file" 2>/dev/null || echo 0)
+    if [[ $entry_count -gt $MAX_HISTORY ]]; then
+        local keep_count=$((entry_count - MAX_HISTORY))
+        head -n "$keep_count" "$history_file" > "${history_file}.tmp" && mv "${history_file}.tmp" "$history_file"
+    fi
+
     # --- Fin Historial ---
 
     rm -f "$tmp_res"

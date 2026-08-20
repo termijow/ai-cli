@@ -76,6 +76,38 @@ case "$1" in
     install-model)
         install_model "$2"
         ;;
+    db)
+        DB_INIT="$PROJECT_ROOT/bin/ai-db-init.sh"
+        if [[ -f "$DB_INIT" ]]; then
+            "$DB_INIT"
+        else
+            echo "❌ No se encontró el script de inicialización de BD."
+        fi
+        ;;
+    log)
+        STATS_SH="$PROJECT_ROOT/bin/ai-stats.sh"
+        if [[ -f "$STATS_SH" ]]; then
+            "$STATS_SH" log "$2" "$3"
+        else
+            echo "❌ No se encontró el script de estadísticas."
+        fi
+        ;;
+    stats)
+        STATS_SH="$PROJECT_ROOT/bin/ai-stats.sh"
+        if [[ -f "$STATS_SH" ]]; then
+            "$STATS_SH" stats
+        else
+            echo "❌ No se encontró el script de estadísticas."
+        fi
+        ;;
+    recent)
+        STATS_SH="$PROJECT_ROOT/bin/ai-stats.sh"
+        if [[ -f "$STATS_SH" ]]; then
+            "$STATS_SH" recent
+        else
+            echo "❌ No se encontró el script de estadísticas."
+        fi
+        ;;
     savings)
         SAVINGS_FILE="$HOME/.ai_cli_savings"
         if [[ -f "$SAVINGS_FILE" ]]; then
@@ -93,10 +125,10 @@ case "$1" in
 
         # Mostrar precio por token
         echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
-        echo -e "\033[0;32m│\033[0m \033[1;36m📊 TASA DE AHORRO (simulada Gemini 2.5 Pro)\033[0m        \033[0;32m│\033[0m"
+        echo -e "\033[0;32m│\033[0m \033[1;36m📊 TASA DE AHORRO (simulada Opus)\033[0m           \033[0;32m│\033[0m"
         echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
-        echo -e "\033[0;32m│\033[0m 💰 Input (Prompt):  \033[0;32m$5.00 / 1M tokens\033[0m         \033[0;32m│\033[0m"
-        echo -e "\033[0;32m│\033[0m 💰 Output:          \033[0;32m$10.00 / 1M tokens\033[0m        \033[0;32m│\033[0m"
+        echo -e "\033[0;32m│\033[0m 💰 Input (Prompt):  \033[0;32m\$5.00 / 1M tokens\033[0m         \033[0;32m│\033[0m"
+        echo -e "\033[0;32m│\033[0m 💰 Output:          \033[0;32m\$25.00 / 1M tokens\033[0m        \033[0;32m│\033[0m"
         echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
 
         # Historial de consultas
@@ -106,11 +138,13 @@ case "$1" in
         if [[ -d "$HOME/.ai_cli_history" ]]; then
             count=0
             max_show=5
-            for log in < <(ls -tr "$HOME/.ai_cli_history" 2>/dev/null | head -n "$max_show"); do
-                details=$(cat "$HOME/.ai_cli_history/$log")
-                printf "\033[0;32m│\033[0m \033[1;33m%d. \033[0m$details\033[0m\n" "$((count+1))"
-                ((count++))
-            done
+            while IFS= read -r log; do
+                if [[ -n "$log" ]]; then
+                    details=$(cat "$log" 2>/dev/null)
+                    printf "\033[0;32m│\033[0m \033[1;33m%d. \033[0m$details\033[0m\n" "$((count+1))"
+                    ((count++))
+                fi
+            done < <(find "$HOME/.ai_cli_history" -maxdepth 1 -type f -printf "%T@ %p\n" 2>/dev/null | sort -rn | cut -d' ' -f2- | head -n "$max_show")
         else
             echo -e "\033[0;32m│\033[0m \033[1;31mNo hay historial de consultas aún\033[0m                \033[0;32m│\033[0m"
         fi

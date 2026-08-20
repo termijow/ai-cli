@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-CLI Document Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f0f0;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: #fff;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            font-weight: bold;
+            background: #217346;
+            color: white;
+        }
+
+        .toolbar {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            gap: 5px;
+        }
+
+        .toolbar button {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            background: #fff;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .toolbar button:hover {
+            background: #f5f5f5;
+        }
+
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .file-list button {
+            width: 100%;
+            padding: 10px;
+            text-align: left;
+            border: none;
+            background: #f5f5f5;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .file-list button:hover {
+            background: #e0e0e0;
+        }
+
+        .file-list button.active {
+            background: #217346;
+            color: white;
+        }
+
+        .editor-area {
+            flex: 1;
+            display: flex;
+            background: white;
+        }
+
+        .preview-pane {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+            background: white;
+        }
+
+        .preview-pane h1 {
+            font-size: 24px;
+            font-weight: normal;
+            margin-bottom: 20px;
+        }
+
+        .preview-pane p {
+            line-height: 1.6;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .preview-pane img {
+            max-width: 100%;
+            margin: 10px 0;
+        }
+
+        .editor-pane {
+            width: 500px;
+            background: #fff;
+            border-left: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-header {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            background: #fafafa;
+            font-weight: bold;
+        }
+
+        .editor-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-content textarea {
+            flex: 1;
+            border: none;
+            resize: none;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.6;
+            outline: none;
+        }
+
+        .properties {
+            padding: 10px;
+            border-top: 1px solid #ddd;
+            background: #fafafa;
+            display: flex;
+            gap: 10px;
+        }
+
+        .properties select, .properties input {
+            flex: 1;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+
+        .status-bar {
+            height: 30px;
+            background: #217346;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            font-size: 12px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            min-width: 400px;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 15px;
+        }
+
+        .modal-content input, .modal-content select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+
+        .modal-content button {
+            padding: 8px 15px;
+            background: #217346;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+
+        .modal-content button:hover {
+            background: #1a5c38;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-header">AI-CLI Document Editor</div>
+        <div class="toolbar">
+            <button onclick="openModal('fileModal')">Abrir</button>
+            <button onclick="saveDocument()">Guardar</button>
+            <button onclick="exportWord()">Exportar Word</button>
+            <button onclick="exportPDF()">Exportar PDF</button>
+        </div>
+        <div class="file-list" id="fileList">
+            <button onclick="selectFile('none')">Sin archivo</button>
+        </div>
+    </div>
+
+    <div class="editor-area">
+        <div class="preview-pane" id="previewPane">
+            <h1>Bienvenido al Editor de Documentos</h1>
+            <p>Selecciona un archivo o abre uno nuevo para editar.</p>
+        </div>
+        <div class="editor-pane">
+            <div class="editor-header">Editor</div>
+            <div class="editor-content">
+                <textarea id="editor" placeholder="Escribe aquí..." oninput="updatePreview()"></textarea>
+            </div>
+            <div class="properties">
+                <select id="fontFamily" onchange="updatePreview()">
+                    <option value="Arial">Arial</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Calibri">Calibri</option>
+                    <option value="Courier New">Courier New</option>
+                </select>
+                <select id="fontSize" onchange="updatePreview()">
+                    <option value="12">12pt</option>
+                    <option value="14">14pt</option>
+                    <option value="16">16pt</option>
+                    <option value="18">18pt</option>
+                    <option value="20">20pt</option>
+                </select>
+                <select id="lineHeight" onchange="updatePreview()">
+                    <option value="1.1">1.1</option>
+                    <option value="1.5">1.5</option>
+                    <option value="2">2</option>
+                </select>
+                <select id="indent" onchange="updatePreview()">
+                    <option value="0">0pt</option>
+                    <option value="12">12pt</option>
+                    <option value="24">24pt</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="statusText">Sin archivo abierto</span>
+    </div>
+
+    <div class="modal" id="fileModal">
+        <div class="modal-content">
+            <h3>Abrir archivo</h3>
+            <input type="file" id="fileInput" accept=".doc,.docx,.txt,.md,.html" />
+            <button onclick="document.getElementById('fileInput').click()">Seleccionar</button>
+            <button onclick="closeModal('fileModal')">Cancelar</button>
+        </div>
+    </div>
+
+    <script>
+        let currentFile = null;
+        let currentContent = '';
+
+        function selectFile(filename) {
+            currentFile = filename;
+            document.getElementById('statusText').textContent = filename || 'Sin archivo abierto';
+            
+            // Actualizar lista de archivos
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+            if (filename) {
+                fileList.innerHTML = `<button class="active" onclick="selectFile('${filename}')">${filename}</button>`;
+            }
+        }
+
+        function updatePreview() {
+            const content = document.getElementById('editor').value;
+            const fontFamily = document.getElementById('fontFamily').value;
+            const fontSize = document.getElementById('fontSize').value + 'pt';
+            const lineHeight = document.getElementById('lineHeight').value;
+            const indent = document.getElementById('indent').value;
+
+            const previewContent = content
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\n/g, '<br>');
+
+            const previewHTML = `
+                <h1 style="font-family: ${fontFamily}; font-size: ${fontSize}; margin-bottom: 20px;">${currentFile || 'Título'}</h1>
+                <p style="font-family: ${fontFamily}; font-size: ${fontSize}; line-height: ${lineHeight}; margin-bottom: 15px;">${previewContent}</p>
+            `;
+
+            document.getElementById('previewPane').innerHTML = previewHTML;
+        }
+
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('active');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        function saveDocument() {
+            if (!currentFile) {
+                alert('No hay archivo para guardar');
+                return;
+            }
+            const content = document.getElementById('editor').value;
+            localStorage.setItem(currentFile, content);
+            alert(`Guardado en localStorage: ${currentFile}`);
+        }
+
+        function exportWord() {
+            if (!currentFile) {
+                alert('No hay archivo para exportar');
+                return;
+            }
+            const content = document.getElementById('editor').value;
+            const blob = new Blob([content], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentFile}.doc`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportPDF() {
+            if (!currentFile) {
+                alert('No hay archivo para exportar');
+                return;
+            }
+            const content = document.getElementById('editor').value;
+            const blob = new Blob([content], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentFile}.pdf`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Cargar desde localStorage
+        window.onload = function() {
+            const saved = localStorage.getItem('last_file');
+            if (saved) {
+                selectFile(saved);
+            }
+            updatePreview();
+        };
+    </script>
+</body>
+</html>

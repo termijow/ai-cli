@@ -1,7 +1,30 @@
-# AI-CLI Ignore patterns
-# .env
-.ai_backups/
+# Logs and history
+.history.json
+.history.json.bak
+.history.json.*
+
+# Savings and history data
+.ai_cli_savings
+.ai_cli_history
+.ai_cli_history/
+
+# Temporary files
+*.tmp
 *.bak
-tmp/
-node_modules/
+
+# Qwen bin scripts (runtime only)
+.qwen/bin/
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
 .DS_Store
+Thumbs.db
