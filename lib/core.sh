@@ -112,7 +112,15 @@ call_llm_robust() {
     local new_savings
     new_savings=$(awk "BEGIN {printf \"%.2f\", $current_savings + $total_saving}")
     echo "$new_savings" > "$savings_file"
-    
+
+    # --- Actualización a la base de datos SQLite ---
+    local db_file="$HOME/.ai_cli_db.db"
+    if [[ -n "$db_file" && -f "$db_file" ]]; then
+        # Insertar registro de uso en la base de datos
+        sqlite3 "$db_file" "INSERT INTO usage_logs (input_tokens, output_tokens, input_cost, output_savings, total_savings) 
+            VALUES ($prompt_tokens, $completion_tokens, $total_saving, $total_saving, $new_savings);"
+    fi
+
     echo -e "\033[0;32m💸 Ahorro en esta consulta: \$${total_saving} USD | Total acumulado: \$${new_savings} USD\033[0m" >&2
 
     # --- Historial de consultas ---

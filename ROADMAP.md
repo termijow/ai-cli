@@ -138,6 +138,15 @@ Este proyecto tiene dos componentes principales:
 
 ---
 
+## 🔌 AI CLI - Características Adicionales
+
+### 4.1 AI CLI Features
+- [X] **show recents** - Mostrar últimas consultas de la base de datos
+- [X] **real-time savings** - Mostrar ahorro acumulado en tiempo real
+- [X] **websocket streaming** - soportar streaming de tokens desde llama-server
+
+---
+
 ## 📦 Dependencias Principales
 
 ```bash
