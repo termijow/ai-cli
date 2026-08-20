@@ -66,6 +66,13 @@ install_model() {
 }
 
 case "$1" in
+    models|select|menu|ui)
+        if [[ -f "$PROJECT_ROOT/bin/ai-models" ]]; then
+            "$PROJECT_ROOT/bin/ai-models"
+        else
+            echo "❌ No se encontró el selector de modelos."
+        fi
+        ;;
     install-model)
         install_model "$2"
         ;;

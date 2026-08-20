@@ -35,8 +35,8 @@ if [ -f ~/llama.cpp/build/bin/llama-server ]; then
     VERSION_OUTPUT=$(~/llama.cpp/build/bin/llama-server --version 2>&1)
     echo "$VERSION_OUTPUT"
 
-    if echo "$VERSION_OUTPUT" | grep -qE "HIP|ROCm"; then
-        echo "¡Éxito! Soporte para HIP/ROCm detectado."
+    if [ -f ~/llama.cpp/build/bin/libggml-hip.so ] || ~/llama.cpp/build/bin/llama-server --list-devices 2>&1 | grep -iqE "ROCm|HIP|Radeon"; then
+        echo "¡Éxito! Soporte para HIP/ROCm detectado y listo para aceleración GPU."
     else
         echo "ERROR: No se detectó soporte para HIP en el binario compilado."
         exit 1

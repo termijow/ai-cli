@@ -1,0 +1,286 @@
+#!/bin/bash
+
+# ==============================================================================
+# AI-CLI MODEL SELECTOR & UI MANAGER
+# ==============================================================================
+
+SCRIPT_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+
+# 1. Localizar .env
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    ENV_FILE="$PROJECT_ROOT/.env"
+elif [[ -n "$AI_CLI_ROOT" && -f "$AI_CLI_ROOT/.env" ]]; then
+    ENV_FILE="$AI_CLI_ROOT/.env"
+else
+    echo -e "\033[0;31m❌ ERROR: No se encontró el archivo .env\033[0m"
+    exit 1
+fi
+
+# Colores
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+MODELS_DIR="$HOME/models"
+mkdir -p "$MODELS_DIR"
+
+# Cargar configuración actual
+CURRENT_MODEL=$(grep "^MODEL_FILE=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+CURRENT_GPU_LAYERS=$(grep "^AI_GPU_LAYERS=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+CURRENT_PORT=$(grep "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+CURRENT_PORT=${CURRENT_PORT:-1234}
+
+# Obtener lista de modelos .gguf
+mapfile -t MODEL_FILES < <(find "$MODELS_DIR" -maxdepth 2 -name "*.gguf" -exec basename {} \; 2>/dev/null | sort -u)
+
+if [[ ${#MODEL_FILES[@]} -eq 0 ]]; then
+    echo -e "${RED}❌ No se encontraron modelos .gguf en $MODELS_DIR${NC}"
+    echo -e "${YELLOW}💡 Puedes descargar uno con: ai install-model <URL>${NC}"
+    exit 1
+fi
+
+# Función para estimar capas y memoria según modelo
+get_model_recommendations() {
+    local model="$1"
+    local size_bytes=$(stat -c%s "$MODELS_DIR/$model" 2>/dev/null || echo 0)
+    local size_gb=$(awk "BEGIN {printf \"%.2f\", $size_bytes / (1024*1024*1024)}")
+    
+    local rec_layers=35
+    local rec_desc=""
+    local fit_status=""
+    
+    # Comparación con awk puro (sin bc)
+    local tier
+    tier=$(awk -v gb="$size_gb" 'BEGIN {
+        if (gb+0 <= 3.5)       print "1"
+        else if (gb+0 <= 7.0)  print "2"
+        else if (gb+0 <= 11.0) print "3"
+        else if (gb+0 <= 16.0) print "4"
+        else                   print "5"
+    }')
+
+    case "$tier" in
+        1) rec_layers=99 ; fit_status="🟢 100% en GPU VRAM (Ultra Rápido)"            ; rec_desc="Excelente para chat diario y respuestas instantáneas." ;;
+        2) rec_layers=99 ; fit_status="🟢 100% en GPU VRAM (Rápido)"                  ; rec_desc="Ideal para programación, razonamiento y bajo uso de RAM." ;;
+        3) rec_layers=40 ; fit_status="🟡 GPU Offload Híbrido (~7GB VRAM + ~1.5GB RAM)" ; rec_desc="Alta inteligencia/coding con offload balanceado." ;;
+        4) rec_layers=25 ; fit_status="🟠 GPU Offload Híbrido (~4.5GB VRAM + ~8GB RAM)" ; rec_desc="Modelo grande. Requiere RAM del sistema." ;;
+        5) rec_layers=15 ; fit_status="🔴 Principalmente en RAM (~3.5GB VRAM + RAM alta)" ; rec_desc="Modelo muy pesado. Generación lenta." ;;
+    esac
+
+    echo "$size_gb|$rec_layers|$fit_status|$rec_desc"
+}
+
+# Selección mediante fzf si está disponible
+select_with_fzf() {
+    export MODELS_DIR
+    export CURRENT_MODEL
+    
+    local fzf_entries=()
+    for m in "${MODEL_FILES[@]}"; do
+        local recs=$(get_model_recommendations "$m")
+        local sz=$(echo "$recs" | cut -d'|' -f1)
+        local marker="  "
+        [[ "$m" == "$CURRENT_MODEL" ]] && marker="▶ [ACTIVO]"
+        printf -v line "%-12s | %-6s GB | %s" "$marker" "$sz" "$m"
+        fzf_entries+=("$line")
+    done
+
+    # Preview sin bc: usa awk para comparaciones float
+    # Separador " | " con espacios para el awk -F
+    local preview_cmd='
+        m=$(echo {} | awk -F" [|] " "{print \$3}" | sed "s/^ *//;s/ *$//")
+        size_bytes=$(stat -c%s "'"$MODELS_DIR"'/$m" 2>/dev/null || echo 0)
+        size_gb=$(awk "BEGIN {printf \"%.2f\", $size_bytes / (1024*1024*1024)}")
+        
+        echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+        echo -e "\033[1;33m📦 MODELO:\033[0m \033[1;37m$m\033[0m"
+        echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+        echo -e "\033[1;34m💾 Tamaño:\033[0m          $size_gb GB"
+        echo -e "\033[1;34m🎯 Hardware:\033[0m        AMD RX 6600 (8GB VRAM) + 23GB RAM"
+        
+        awk -v gb="$size_gb" "BEGIN {
+            if      (gb+0 <= 3.5)  { layers=\"99 (100% en VRAM)\";   estado=\"\033[1;32m100% en GPU (Ultra fluido)\033[0m\" }
+            else if (gb+0 <= 7.0)  { layers=\"99 (100% en VRAM)\";   estado=\"\033[1;32m100% en GPU (Excelente)\033[0m\" }
+            else if (gb+0 <= 11.0) { layers=\"35-40 (Hibrido)\";     estado=\"\033[1;33m~7GB VRAM + ~1.5GB RAM\033[0m\" }
+            else if (gb+0 <= 16.0) { layers=\"20-25\";               estado=\"\033[1;33m~4.5GB VRAM + ~8GB RAM\033[0m\" }
+            else                   { layers=\"15-20\";               estado=\"\033[1;31mOffload mayoritario en RAM\033[0m\" }
+            print \"\033[1;34m🚀 Capas GPU:\033[0m       \" layers
+            print \"\033[1;34m⚡ Estado:\033[0m          \" estado
+        }"
+        echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+        echo -e "Presiona \033[1;32mENTER\033[0m para seleccionar y activar este modelo."
+    '
+
+    local selected
+    selected=$(printf "%s\n" "${fzf_entries[@]}" | fzf \
+        --height=60% \
+        --layout=reverse \
+        --border \
+        --prompt="Selecciona Modelo AI > " \
+        --header="↑/↓ para navegar | ENTER para elegir | ESC para salir" \
+        --preview="$preview_cmd" \
+        --preview-window=right:50%:wrap)
+
+    if [[ -n "$selected" ]]; then
+        echo "$selected" | awk -F' [|] ' '{print $3}' | sed 's/^ *//;s/ *$//'
+    fi
+}
+
+# Menú interactivo básico si no hay fzf
+select_with_menu() {
+    clear
+    echo -e "${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
+    echo -e "${BLUE}│${NC} ${YELLOW}🤖 SELECTOR DE MODELOS LOCALES AI-CLI${NC}                 ${BLUE}│${NC}"
+    echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${NC}"
+    
+    local i=1
+    for m in "${MODEL_FILES[@]}"; do
+        local recs=$(get_model_recommendations "$m")
+        local sz=$(echo "$recs" | cut -d'|' -f1)
+        local status=$(echo "$recs" | cut -d'|' -f3)
+        local active_tag=""
+        [[ "$m" == "$CURRENT_MODEL" ]] && active_tag=" ${GREEN}[ACTIVO]${NC}"
+        
+        printf "${BLUE}│${NC} ${BOLD}%2d)${NC} %-40s %5s GB%b\n" "$i" "$m" "$sz" "$active_tag"
+        printf "${BLUE}│${NC}     ↳ %b\n" "$status"
+        ((i++))
+    done
+    echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+    
+    echo -e "\nElige el número de modelo [1-$((i-1))] (o 'q' para salir): "
+    read -p "Opción: " opt
+    
+    if [[ "$opt" =~ ^[0-9]+$ ]] && (( opt >= 1 && opt < i )); then
+        echo "${MODEL_FILES[$((opt-1))]}"
+    else
+        echo ""
+    fi
+}
+
+# Ejecución de selección
+SELECTED_MODEL=""
+if command -v fzf &>/dev/null; then
+    SELECTED_MODEL=$(select_with_fzf)
+else
+    SELECTED_MODEL=$(select_with_menu)
+fi
+
+if [[ -z "$SELECTED_MODEL" ]]; then
+    echo -e "${YELLOW}Selección cancelada.${NC}"
+    exit 0
+fi
+
+# Calcular recomendación para el modelo elegido
+RECS=$(get_model_recommendations "$SELECTED_MODEL")
+REC_SIZE=$(echo "$RECS" | cut -d'|' -f1)
+REC_LAYERS=$(echo "$RECS" | cut -d'|' -f2)
+REC_STATUS=$(echo "$RECS" | cut -d'|' -f3)
+
+echo -e "\n${GREEN}✔ Modelo seleccionado:${NC} ${BOLD}$SELECTED_MODEL${NC} ($REC_SIZE GB)"
+echo -e "✦ Recomendación para tu RX 6600 (8GB): ${BOLD}$REC_LAYERS capas en GPU${NC}"
+echo -e "✦ $REC_STATUS"
+
+read -p "✦ ¿Cuántas capas en GPU deseas asignar? [$REC_LAYERS]: " custom_layers
+GPU_LAYERS=${custom_layers:-$REC_LAYERS}
+
+# Actualizar .env
+sed -i "s|^MODEL_FILE=.*|MODEL_FILE=$SELECTED_MODEL|" "$ENV_FILE"
+sed -i "s|^AI_GPU_LAYERS=.*|AI_GPU_LAYERS=$GPU_LAYERS|" "$ENV_FILE"
+
+# Si el repo no está configurado, actualizarlo con nombre estándar
+if ! grep -q "^MODEL_REPO=" "$ENV_FILE"; then
+    echo "MODEL_REPO=local/$SELECTED_MODEL" >> "$ENV_FILE"
+fi
+
+# Cargar nivel de thinking actual
+CURRENT_THINKING=$(grep "^AI_THINKING_LEVEL=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+CURRENT_REASONING=$(grep "^AI_REASONING=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+CURRENT_THINKING=${CURRENT_THINKING:-high}
+CURRENT_REASONING=${CURRENT_REASONING:-on}
+
+echo -e "\n${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
+echo -e "${BLUE}│${NC} ${YELLOW}🧠 NIVEL DE THINKING (Qwen Reasoning Budget)${NC}          ${BLUE}│${NC}"
+echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${NC}"
+echo -e "${BLUE}│${NC}  ${BOLD}0)${NC} off   — Sin razonamiento (respuesta directa, ultra rápida) ${NC}"
+echo -e "${BLUE}│${NC}  ${BOLD}1)${NC} low   — Budget:  1,024 tokens  (rápido, básico)            ${NC}"
+echo -e "${BLUE}│${NC}  ${BOLD}2)${NC} high  — Budget:  8,192 tokens  (equilibrado, recomendado)  ${NC}"
+echo -e "${BLUE}│${NC}  ${BOLD}3)${NC} xhigh — Budget: 38,912 tokens  (máximo, lento)              ${NC}"
+echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+echo -e "  Actual: ${GREEN}${CURRENT_REASONING}${NC} / nivel ${GREEN}${CURRENT_THINKING}${NC}\n"
+
+read -p "Elige nivel [0-3] (Enter para mantener '${CURRENT_THINKING}'): " thinking_opt
+
+case "$thinking_opt" in
+    0)
+        NEW_REASONING="off"
+        NEW_THINKING="low"  # budget ignorado cuando reasoning=off
+        echo -e "\n${YELLOW}⚡ Thinking DESACTIVADO — Respuestas directas sin razonamiento${NC}"
+        ;;
+    1)
+        NEW_REASONING="on"
+        NEW_THINKING="low"
+        echo -e "\n${GREEN}⚡ Thinking LOW — 1,024 tokens de razonamiento${NC}"
+        ;;
+    2)
+        NEW_REASONING="on"
+        NEW_THINKING="high"
+        echo -e "\n${GREEN}🧠 Thinking HIGH — 8,192 tokens de razonamiento (recomendado)${NC}"
+        ;;
+    3)
+        NEW_REASONING="on"
+        NEW_THINKING="xhigh"
+        echo -e "\n${YELLOW}🔥 Thinking XHIGH — 38,912 tokens — generación lenta pero profunda${NC}"
+        ;;
+    "")
+        NEW_REASONING="$CURRENT_REASONING"
+        NEW_THINKING="$CURRENT_THINKING"
+        echo -e "\n${CYAN}↩ Sin cambios en thinking level${NC}"
+        ;;
+    *)
+        NEW_REASONING="$CURRENT_REASONING"
+        NEW_THINKING="$CURRENT_THINKING"
+        echo -e "\n${YELLOW}⚠️  Opción inválida, sin cambios${NC}"
+        ;;
+esac
+
+# Actualizar AI_REASONING y AI_THINKING_LEVEL en .env
+if grep -q "^AI_REASONING=" "$ENV_FILE"; then
+    sed -i "s|^AI_REASONING=.*|AI_REASONING=$NEW_REASONING|" "$ENV_FILE"
+else
+    echo "AI_REASONING=$NEW_REASONING" >> "$ENV_FILE"
+fi
+
+if grep -q "^AI_THINKING_LEVEL=" "$ENV_FILE"; then
+    sed -i "s|^AI_THINKING_LEVEL=.*|AI_THINKING_LEVEL=$NEW_THINKING|" "$ENV_FILE"
+else
+    echo "# Qwen thinking budget: low (~1K tokens), high (~8K), xhigh (~38K)" >> "$ENV_FILE"
+    echo "AI_THINKING_LEVEL=$NEW_THINKING" >> "$ENV_FILE"
+fi
+
+echo -e "\n${GREEN}✅ Configuración guardada en .env ($ENV_FILE)${NC}"
+
+# Preguntar si reiniciar el servidor
+echo -e "\n${YELLOW}¿Deseas reiniciar 'ai-serve' ahora con el nuevo modelo? (s/n)${NC}"
+read -p "Opción [s]: " restart_opt
+restart_opt=${restart_opt:-s}
+
+if [[ "$restart_opt" =~ ^[sSyY]$ ]]; then
+    echo -e "\n✦ Deteniendo servidor anterior..."
+    pkill -f "llama-server" 2>/dev/null || true
+    sleep 1
+    
+    echo -e "✦ Iniciando ai-serve..."
+    if [[ -f "$PROJECT_ROOT/bin/ai-serve" ]]; then
+        exec "$PROJECT_ROOT/bin/ai-serve"
+    else
+        echo -e "${RED}❌ No se encontró ai-serve en $PROJECT_ROOT/bin${NC}"
+    fi
+else
+    echo -e "✦ Puedes iniciar el servidor cuando quieras con: ${BOLD}ai-serve${NC}"
+fi

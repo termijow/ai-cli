@@ -37,48 +37,52 @@ if [[ -z "$REAL_LLAMA_PATH" ]]; then
     exit 1
 fi
 
-# 3. Configuración de Hilos (90% de nproc)
+# 3. Configuración de Hilos Inteligente (Evita congelamiento del sistema)
 TOTAL_CORES=$(nproc)
-OPTIMIZED_THREADS=$(python3 -c "print(int($TOTAL_CORES * 0.9))")
+PHYSICAL_CORES=$(lscpu -p=CORE 2>/dev/null | grep -v '^#' | sort -u | wc -l)
+[[ -z "$PHYSICAL_CORES" || "$PHYSICAL_CORES" -eq 0 ]] && PHYSICAL_CORES=$(( TOTAL_CORES / 2 ))
+if [[ "$PHYSICAL_CORES" -gt 2 ]]; then
+    DEFAULT_THREADS=$(( PHYSICAL_CORES - 1 ))
+else
+    DEFAULT_THREADS=$PHYSICAL_CORES
+fi
+OPTIMIZED_THREADS=${AI_THREADS:-$DEFAULT_THREADS}
 
 # 4. Switch de Configuración por Hardware
 case "$AI_HARDWARE_MODE" in
     AMD)
         echo "🔍 Verificando hardware AMD..."
-        if ! rocminfo | grep 'Name:' | grep -qE 'gfx1032|RX 6600'; then
-            echo "❌ ROCm no detecta la RX 6600. Revisa los drivers"
+        if ! rocminfo 2>/dev/null | grep 'Name:' | grep -qE 'gfx1030|gfx1032|RX 6600|Radeon'; then
+            echo "❌ ROCm no detecta la GPU AMD. Revisa los drivers"
             exit 1
         fi
 
         export GGML_HIPBLAS=1
 
         echo "🔍 Verificando motor ROCm..."
-        if ! "$REAL_LLAMA_PATH" --version 2>&1 | grep -iqE "HIP|ROCm|ggml_cuda_init"; then
-            echo "❌ El binario no tiene soporte ROCm. Reinstala con la opción AMD"
+        if [ ! -f "$HOME/llama.cpp/build/bin/libggml-hip.so" ] && ! "$REAL_LLAMA_PATH" --list-devices 2>&1 | grep -iqE "HIP|ROCm|Radeon"; then
+            echo "❌ El binario no tiene soporte ROCm. Ejecuta ./rebuild-rocm.sh para compilarlo."
             exit 1
         fi
 
-        GPU_LAYERS=${AI_GPU_LAYERS:-30}
-        CTX_SIZE=${AI_CTX_SIZE:-40000}
+        GPU_LAYERS=${AI_GPU_LAYERS:-35}
+        CTX_SIZE=${AI_CTX_SIZE:-4096}
         BATCH_SIZE=512
         UBATCH_SIZE=256
-        EXTRA_FLAGS="--jinja --flash-attn on --parallel 1 --cache-ram 16384 --context-shift --alias localmodel --reasoning-format none --predict -1"
         echo -e "\033[1;32m🚀 MODO AMD ROCm ACTIVO (RX 6600)\033[0m"
         ;;
     INTEL)
-        GPU_LAYERS=999
-        CTX_SIZE=8192
+        GPU_LAYERS=${AI_GPU_LAYERS:-999}
+        CTX_SIZE=${AI_CTX_SIZE:-4096}
         BATCH_SIZE=512
         UBATCH_SIZE=512
-        EXTRA_FLAGS="--jinja --flash-attn auto --alias localmodel"
         echo -e "\033[1;36m🚀 MODO INTEL VULKAN ACTIVO (Iris Xe)\033[0m"
         ;;
     *)
         GPU_LAYERS=0
-        CTX_SIZE=4096
+        CTX_SIZE=${AI_CTX_SIZE:-4096}
         BATCH_SIZE=128
         UBATCH_SIZE=128
-        EXTRA_FLAGS="--jinja --alias localmodel"
         echo -e "\033[1;33m⚠️ MODO CPU ACTIVO\033[0m"
         ;;
 esac
@@ -89,6 +93,7 @@ MODEL_PATH=$(find "$MODELS_DIR" "$HOME/.cache/huggingface" -name "$MODEL_FILE" 2
 
 if [[ -z "$MODEL_PATH" ]]; then
     echo -e "\033[0;31m❌ ERROR: No se encontró el modelo $MODEL_FILE\033[0m"
+    echo "💡 Puedes usar 'ai select' o 'ai models' para elegir un modelo existente."
     exit 1
 fi
 
@@ -96,16 +101,37 @@ fi
 echo -e "\033[0;34m╭──────────────────────────────────────────────────────────╮\033[0m"
 echo -e "\033[0;34m│\033[0m \033[1;33m🔥 AI-SERVE: $AI_HARDWARE_MODE CONFIGURATION\033[0m            \033[0;34m│\033[0m"
 echo -e "\033[0;34m├──────────────────────────────────────────────────────────┤\033[0m"
-echo -e "\033[0;36m│\033[0m 🧠 Hilos:    \033[0;32m$OPTIMIZED_THREADS ($TOTAL_CORES detectados)\033[0m"
+echo -e "\033[0;36m│\033[0m 📦 Modelo:   \033[0;32m$MODEL_FILE\033[0m"
+echo -e "\033[0;36m│\033[0m 🧠 Hilos:    \033[0;32m$OPTIMIZED_THREADS ($PHYSICAL_CORES cores físicos, $TOTAL_CORES hilos)\033[0m"
 echo -e "\033[0;36m│\033[0m 📏 Contexto: \033[0;32m$CTX_SIZE tokens\033[0m"
-echo -e "\033[0;36m│\033[0m 🚀 Offload:  \033[0;32m$GPU_LAYERS capas\033[0m"
+echo -e "\033[0;36m│\033[0m 🚀 Offload:  \033[0;32m$GPU_LAYERS capas en GPU\033[0m"
+echo -e "\033[0;36m│\033[0m 🌐 Web UI:   \033[0;32mhttp://localhost:$PORT\033[0m"
 echo -e "\033[0;34m╰──────────────────────────────────────────────────────────╯\033[0m"
 
 # Configuración para usar la RX 6600 (GPU 0)
 export HIP_VISIBLE_DEVICES=0
 export HSA_OVERRIDE_GFX_VERSION=10.3.0
 export HSA_NO_SCRATCH_REPLICATE=1
-export LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/hip/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/hip/lib:$HOME/llama.cpp/build/bin:$LD_LIBRARY_PATH
+
+REASONING_FLAG=${AI_REASONING:-off}
+
+# --- Thinking Budget (Qwen3 "thinking level") ---
+# Maps AI_THINKING_LEVEL to --reasoning-budget token counts:
+#   low   →  1024  tokens  (rapido, razonamiento básico)
+#   high  →  8192  tokens  (equilibrado, recomendado)
+#   xhigh →  38912 tokens  (máximo, lento pero profundo)
+case "${AI_THINKING_LEVEL:-high}" in
+    low)   REASONING_BUDGET=1024  ;;
+    high)  REASONING_BUDGET=8192  ;;
+    xhigh) REASONING_BUDGET=38912 ;;
+    *)     REASONING_BUDGET=8192  ;;
+esac
+
+# Si el reasoning está apagado, forzar budget=0
+[[ "$REASONING_FLAG" == "off" ]] && REASONING_BUDGET=0
+
+echo -e "\033[0;36m│\033[0m 🧠 Thinking:  \033[0;32m${AI_THINKING_LEVEL:-high} (budget: ${REASONING_BUDGET} tokens)\033[0m"
 
 EXTRA_FLAGS=(
     --jinja
@@ -116,14 +142,12 @@ EXTRA_FLAGS=(
     --cache-type-v q4_0
     --context-shift
     --alias localmodel
+    --reasoning "$REASONING_FLAG"
+    --reasoning-budget "$REASONING_BUDGET"
     --reasoning-format none
-    --chat-template-kwargs '{"enable_thinking":false}'
     --predict 4096
-    --no-mmap
-    --n-cpu-moe 20
 )
 
-# 7. Ejecución Directa (Comando Mandatorio)
 # 7. Ejecución directa
 exec "$REAL_LLAMA_PATH" \
     --model "$MODEL_PATH" \
