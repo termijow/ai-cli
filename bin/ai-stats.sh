@@ -40,7 +40,7 @@ EOF
 # Función para mostrar estadísticas
 show_stats() {
     echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
-    echo -e "\033[0;32m│\033[0m \033[1;36m📊 MÉTRICAS HISTÓRICAS TOTALS\033[0m                \033[0;32m│\033[0m"
+    echo -e "\033[0;32m│\033[0m \033[1;36m📊 MÉTRICAS HISTÓRICAS TOTALS\033[0m                \033[0m"
     echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
     
     local total_input_tokens=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(input_tokens), 0) FROM usage_logs;")
@@ -49,11 +49,11 @@ show_stats() {
     local total_output_savings=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(output_savings), 0) FROM usage_logs;")
     local total_savings=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(total_savings), 0) FROM usage_logs;")
     
-    echo -e "\033[0;32m│\033[0m \033[1;33mTokens Input Totales:\033[0m \033[1;33m$%-8s\033[0m       \033[0;32m│\033[0m" "$total_input_tokens"
-    echo -e "\033[0;32m│\033[0m \033[1;33mTokens Output Totales:\033[0m \033[1;33m$%-8s\033[0m       \033[0;32m│\033[0m" "$total_output_tokens"
-    echo -e "\033[0;32m│\033[0m \033[1;33mGasto Input Total:\033[0m \033[1;33m$%-6s USD\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' $total_input_cost)"
-    echo -e "\033[0;32m│\033[0m \033[1;33mAhorro Output Total:\033[0m \033[1;33m$%-6s USD\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' $total_output_savings)"
-    echo -e "\033[0;32m│\033[0m \033[1;32m💰 TOTAL AHORRADO:\033[0m \033[1;32m$%-6s USD\033[0m       \033[0;32m│\033[0m" "$(printf '%.2f' $total_savings)"
+    echo -e "\033[0;32m│\033[0m \033[1;33mTokens Input Totales:\033[0m \033[1;33m%8s\033[0m       \033[0;32m│\033[0m" "$total_input_tokens"
+    echo -e "\033[0;32m│\033[0m \033[1;33mTokens Output Totales:\033[0m \033[1;33m%8s\033[0m       \033[0;32m│\033[0m" "$total_output_tokens"
+    echo -e "\033[0;32m│\033[0m \033[1;33mGasto Input Total:\033[0m \033[1;33m%.2f USD\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' "$total_input_cost")"
+    echo -e "\033[0;32m│\033[0m \033[1;33mAhorro Output Total:\033[0m \033[1;33m%.2f USD\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' "$total_output_savings")"
+    echo -e "\033[0;32m│\033[0m \033[1;32m💰 TOTAL AHORRADO:\033[0m \033[1;32m%.2f USD\033[0m       \033[0;32m│\033[0m" "$(printf '%.2f' "$total_savings")"
     echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
     
     echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
@@ -62,7 +62,7 @@ show_stats() {
     
     # Últimos 6 meses
     local current_month=$(date +%Y-%m)
-    for month in $(seq -r 6 1); do
+    for month in $(seq -g 6 1); do
         local month_name=$(date -d "$current_month-$month" +%B 2>/dev/null || date -j -f "%Y-%m-$month" "+%B" 2>/dev/null || echo "$current_month-$month")
         local input_tokens=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(input_tokens), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$current_month-$month';")
         local output_tokens=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(output_tokens), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$current_month-$month';")
@@ -76,28 +76,9 @@ show_stats() {
     echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
 }
 
-# Función para mostrar registros recientes
+# Función para mostrar registros recientes - llama a script separado para evitar conflictos de variables
 show_recent() {
-    echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
-    echo -e "\033[0;32m│\033[0m \033[1;36m📜 REGISTROS RECIENTES\033[0m                        \033[0;32m│\033[0m"
-    echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
-    
-    count=0
-    max_show=10
-    sqlite3 -separator " | " "$HOME/.ai_cli_db.db" "SELECT 
-        strftime('%Y-%m-%d %H:%M', created_at) || ' - ' || 
-        COALESCE(input_tokens, 0) || 'k tokens in | ' || 
-        COALESCE(output_tokens, 0) || 'k tokens out | 
-        \$$(printf '%.2f' $(SELECT COALESCE(input_cost, 0) FROM usage_logs WHERE rowid=$rowid)) USD input | 
-        \$$(printf '%.2f' $(SELECT COALESCE(output_savings, 0) FROM usage_logs WHERE rowid=$rowid)) USD savings | 
-        \$$(printf '%.2f' $(SELECT total_savings FROM usage_logs WHERE rowid=$rowid)) USD TOTAL
-    FROM usage_logs 
-    ORDER BY rowid DESC 
-    LIMIT $max_show;" | while read line; do
-        printf "\033[0;32m│\033[0m \033[1;33m%d. \033[0m$line\033[0m\n" "$((count+1))"
-        ((count++))
-    done
-    echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
+    "$PROJECT_ROOT/bin/show_recent.sh"
 }
 
 case "$1" in
