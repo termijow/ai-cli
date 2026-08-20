@@ -39,8 +39,32 @@ User requested a command to start all services for the AI-CLI project, acknowled
 - Trap handler ensures cleanup on INT/TERM signals
 - Services logged to file for debugging
 
+## Multi-Service Startup (v2)
+
+### Frontend Auto-Start Integration
+- Added frontend server startup to start-all.sh
+- FRONTEND_PORT environment variable (default 5173)
+- Frontend starts with `node scripts/start.js &`
+- Both backend and frontend processes tracked in services list
+
+### Python Orchestration (`master.py`)
+- Python script to start backend via start-all.sh
+- Colored output for service status
+- Graceful Ctrl+C handling with cleanup
+
+### Node.js Orchestration (`frontend/scripts/all.js`)
+- Uses child_process.spawn to run start-all.sh for backend
+- Spawns frontend dev server with custom PORT
+- Shows colored output for service status
+- Ctrl+C handling for graceful shutdown
+
+### NPM Integration
+- Added "all" script to frontend/package.json
+- `npm run all` starts both backend and frontend
+
 ## Future Extensions
 - Add more service targets (e.g., `make frontend`, `make db`)
 - Add health check endpoints for each service
 - Add dependency installation targets
 - Add database migration targets
+- Add UI for service management in frontend
