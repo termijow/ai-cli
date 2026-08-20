@@ -12,10 +12,19 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, WebSocket, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
+
+# Try to import python-docx for Word document generation
+try:
+    from docx import Document
+    from docx.shared import Inches, Pt
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+    DOCX_AVAILABLE = False  # Keep for compatibility
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -50,25 +59,25 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager."""
     logger.info("Starting AI CLI Backend server...")
     logger.info(f"Model path: {MODEL_PATH}")
-    logger.info(f"LLAMA_CPP_SERVER: {LLAMA_SERVER}")
-    
+    logger.info(f"LLAMA_CPP_SERVER: {LLAMA_CPP_SERVER}")
+
     # Start websocket savings handler in background
     from bin.websocket_savings_handler import SavingsServer
     savings_server = SavingsServer()
     savings_task = asyncio.create_task(savings_server.start())
-    
+
     yield
-    
+
     logger.info("Shutting down AI CLI Backend server...")
     savings_task.cancel()
     try:
         await savings_task
     except asyncio.CancelledError:
         pass
-    
+
     for ws in active_websockets.values():
         await ws.close()
-    
+
     logger.info("Server shutdown complete")
 
 
@@ -89,6 +98,24 @@ class TokenTracking(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
 
+
+class DocxGenerationRequest(BaseModel):
+    """Request for Word document generation."""
+    title: Optional[str] = Field(None, description="Document title")
+    content: Optional[str] = Field(None, description="Document content")
+    prompt: Optional[str] = Field(None, description="Custom prompt for content generation")
+    output_path: Optional[str] = Field("/tmp/output.docx", description="Path to save the generated document")
+    sections: Optional[List[Dict]] = Field(None, description="List of sections to add (headers, paragraphs)")
+
+
+class PdfGenerationRequest(BaseModel):
+    """Request for PDF document generation."""
+    title: Optional[str] = Field(None, description="Document title")
+    content: Optional[str] = Field(None, description="Document content")
+    prompt: Optional[str] = Field(None, description="Custom prompt for content generation")
+    output_path: Optional[str] = Field("/tmp/output.pdf", description="Path to save the generated document")
+    format: Optional[str] = Field("markdown", description="Output format: markdown, html, or text")
+
 # Endpoints
 
 @app.on_event("startup")
@@ -96,7 +123,7 @@ async def startup_event():
     """Startup event - initialize llama.cpp connection."""
     logger.info("Starting backend server...")
     logger.info(f"Model: {MODEL_PATH}")
-    logger.info(f"LLAMA_CPP_SERVER: {LLAMA_SERVER}")
+    logger.info(f"LLAMA_CPP_SERVER: {LLAMA_CPP_SERVER}")
     
     try:
         import requests

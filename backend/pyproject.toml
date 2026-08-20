@@ -1,0 +1,12 @@
+[tool.poetry]
+name = "ai-cli-backend"
+version = "0.1.0"
+description = "Backend server for AI-CLI"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = ">=0.109.0"
+uvicorn = ">=0.27.0"
+pdfplumber = ">=0.11.0"
+python-docx = ">=1.1.0"
+markdown = ">=3.5.0"

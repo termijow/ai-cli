@@ -1,32 +1,34 @@
-.PHONY: install install-scripts pre-install clean help
+.PHONY: start-backend start-all stop-all clean help
 
-install:
-	@echo "Installing AI-CLI to ~/.local/bin..."
-	@mkdir -p ~/.local/bin
-	@chmod +x bin/* lib/* presets/* 2>/dev/null || chmod +x bin/* lib/*
-	@for f in bin/*; do \
-		if [ -f "$$f" ]; then \
-			ln -sf "$$(pwd)/$$f" "$$HOME/.local/bin/$$(basename "$$f")"; \
-		fi \
-	done
-	@echo "AI-CLI binaries installed and linked successfully in ~/.local/bin!"
-	@echo "Run 'ai' or 'ai-menu' to launch the TUI interface."
+# Default target
+all: start-all
 
-install-scripts:
-	@echo "Configuring executable permissions..."
-	@chmod +x bin/* lib/*
-	@echo "Scripts configured!"
+# Start backend server
+backend:
+	cd backend && uvicorn server:app --host 0.0.0.0 --port 3094
 
-pre-install:
-	@mkdir -p ~/.local/bin presets .ai_backups
-	@echo "Pre-installation complete"
+# Start all services (currently only backend)
+start-all:
+	@chmod +x start-all.sh 2>/dev/null || true
+	bash start-all.sh
 
+# Stop all services
+stop-all:
+	pkill -f "uvicorn server:app" 2>/dev/null || true
+	echo "Stopped all services"
+
+# Clean up
 clean:
-	@rm -rf ~/.ai_cli_savings ~/.ai_cli_history
-	@echo "Cleaned up temporary and history files"
+	rm -f backend/server.log
+	rm -f ~/.ai_cli_savings ~/.ai_cli_history
+	echo "Cleaned up"
 
+# Help
 help:
-	@echo "AI-CLI Makefile Targets:"
-	@echo "  make install         - Link all AI-CLI tools to ~/.local/bin"
-	@echo "  make install-scripts - Make all bin and lib scripts executable"
-	@echo "  make clean           - Remove local cache and history"
+	@echo "AI-CLI Services Commands:"
+	@echo "  make all              - Start all services (default)"
+	@echo "  make backend          - Start backend server only"
+	@echo "  make start-all        - Start all services using startup script"
+	@echo "  make stop-all         - Stop all running services"
+	@echo "  make clean            - Clean up logs and cache"
+	@echo "  make help             - Show this help message"
