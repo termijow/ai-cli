@@ -35,9 +35,9 @@ SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
 # Model configuration
-MODEL_PATH = PROJECT_ROOT / "models" / "Qwen3.5-9B-GGUF" / "Qwen3.5-9B-GGUF.Q4_K_M.gguf"
+MODEL_PATH = PROJECT_ROOT / "models" / "Qwen3.5-4B-Q4_K_M.gguf"
 LLAMA_CPP_SERVER = PROJECT_ROOT / "llama-server"
-LLAMA_PORT = os.environ.get("LLAMA_PORT", 8080)
+LLAMA_PORT = os.environ.get("LLAMA_PORT", 1234)
 MAX_TOKENS = 4096
 TEMPERATURE = 0.7
 
@@ -308,39 +308,38 @@ async def extract_from_document(document_type: str, request: DocumentOperation, 
 
 
 @app.post("/chat", tags=["Chat"])
-async def chat_with_llm(message: str, websocket: WebSocket):
+async def chat_with_llm(message: str):
     """Chat with the LLM directly."""
+    import requests
     input_tokens = 0
     output_tokens = 0
-    
+
     try:
-        await websocket.accept()
-        active_websockets[websocket.id] = websocket
-        
-        llm_response = call_llm(f"You are helpful assistant. {message}", max_tokens=512)
-        
-        async for chunk in llm_response:
-            await websocket.send_json({"type": "stream", "data": chunk})
-            input_tokens += 1
-            output_tokens += len(chunk)
-        
-        await websocket.send_json({
-            "type": "complete",
-            "data": llm_response,
+        # Call llama.cpp v1/chat/completions endpoint
+        test_url = f"http://localhost:{LLAMA_PORT}/v1/chat/completions"
+        payload = {
+            "model": "localmodel",
+            "messages": [{"role": "user", "content": f"You are helpful assistant. {message}"}],
+            "stream": False
+        }
+        response = requests.post(test_url, json=payload, timeout=10)
+        data = response.json()
+
+        llm_response = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        input_tokens = data.get("usage", {}).get("prompt_tokens", 0)
+        output_tokens = data.get("usage", {}).get("completion_tokens", 0)
+
+        return {
+            "content": llm_response,
             "tokens_used": input_tokens + output_tokens
-        })
-        
-    except WebSocketDisconnect:
-        await websocket.close()
+        }
+
     except Exception as e:
         logger.error(f"Error during chat: {e}")
         raise HTTPException(500, f"Error: {str(e)}")
-    
-    finally:
-        active_websockets.pop(websocket.id, None)
 
 
-@app.get("/stats", tags=["Stats"])
+@app.post("/stats", tags=["Stats"])
 async def get_stats():
     """Get statistics about the backend."""
     try:
@@ -348,19 +347,229 @@ async def get_stats():
         test_url = f"http://localhost:{LLAMA_PORT}/v1/models"
         response = requests.get(test_url, timeout=5)
         models = response.json().get("root", {}).get("models", [])
-        
+
         return {
             "status": "success",
             "model_count": len(models),
             "model_path": str(MODEL_PATH),
-            "server": f"http://localhost:{LLAMA_PORT}"
+            "server": f"http://localhost:{LLAMA_PORT}",
+            "features": {
+                "word_generation": DOCX_AVAILABLE,
+                "pdf_generation": True
+            }
         }
     except Exception as e:
         logger.warning(f"Could not fetch stats: {e}")
     return {
         "status": "success",
-        "model_path": str(MODEL_PATH)
+        "model_path": str(MODEL_PATH),
+        "features": {
+            "word_generation": DOCX_AVAILABLE,
+            "pdf_generation": True
+        }
     }
+
+
+# Document Generation Endpoints
+
+@app.post("/documents/word/generate", tags=["Document Generation"])
+async def generate_word_document(request: DocxGenerationRequest):
+    """Generate a Word document (.docx) using the LLM."""
+    if not DOCX_AVAILABLE:
+        raise HTTPException(400, "python-docx is required. Install with: pip install python-docx")
+    
+    input_tokens = 0
+    output_tokens = 0
+
+    try:
+        # Generate content using LLM if prompt is provided
+        prompt = request.prompt
+        content = request.content
+        
+        if prompt and not content:
+            content = call_llm(prompt, max_tokens=2048)
+        elif prompt and content:
+            content = f"{content}\n\n{call_llm(prompt, max_tokens=2048)}"
+        
+        if not content:
+            raise HTTPException(400, "No content generated")
+        
+        # Generate the Word document
+        doc_bytes = generate_word_document(
+            title=request.title or "Documento",
+            content=content,
+            sections=request.sections
+        )
+        
+        return {
+            "status": "success",
+            "message": "Document generated successfully",
+            "filename": Path(request.output_path or "/tmp/output.docx").name,
+            "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "file_size": len(doc_bytes),
+            "tokens_used": {"input": input_tokens, "output": output_tokens}
+        }
+        
+    except ImportError as e:
+        raise HTTPException(400, f"Missing dependency: {str(e)}. Install with: pip install python-docx")
+    except Exception as e:
+        logger.error(f"Error generating Word document: {e}")
+        raise HTTPException(500, f"Error generating document: {str(e)}")
+
+
+@app.post("/documents/pdf/generate", tags=["Document Generation"])
+async def generate_pdf_document(request: PdfGenerationRequest):
+    """Generate a PDF document from content using the LLM."""
+    input_tokens = 0
+    output_tokens = 0
+
+    try:
+        # Generate content using LLM if prompt is provided
+        prompt = request.prompt
+        content = request.content
+        
+        if prompt and not content:
+            content = call_llm(prompt, max_tokens=2048)
+        elif prompt and content:
+            content = f"{content}\n\n{call_llm(prompt, max_tokens=2048)}"
+        
+        if not content:
+            raise HTTPException(400, "No content generated")
+        
+        # Generate the PDF document
+        pdf_bytes = generate_pdf_document(
+            title=request.title or "Documento",
+            content=content,
+            format=request.format or "markdown"
+        )
+        
+        return {
+            "status": "success",
+            "message": "PDF generated successfully",
+            "filename": Path(request.output_path or "/tmp/output.pdf").name,
+            "content_type": "application/pdf",
+            "file_size": len(pdf_bytes),
+            "tokens_used": {"input": input_tokens, "output": output_tokens}
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF document: {e}")
+        raise HTTPException(500, f"Error generating document: {str(e)}")
+
+
+@app.post("/documents/word/generate-interactive", tags=["Document Generation"])
+async def generate_word_interactive(websocket: WebSocket):
+    """Generate Word document with streaming output."""
+    if not DOCX_AVAILABLE:
+        raise HTTPException(400, "python-docx is required")
+    
+    try:
+        await websocket.accept()
+    except Exception as e:
+        logger.error(f"Failed to accept websocket: {e}")
+        raise HTTPException(500, f"Failed to accept websocket: {e}")
+    
+    request = DocxGenerationRequest()
+    try:
+        # Generate content using LLM
+        prompt = request.prompt
+        content = request.content
+        
+        if prompt and not content:
+            content = call_llm(prompt, max_tokens=2048)
+        
+        async def stream_progress():
+            """Stream progress to websocket."""
+            await websocket.send_json({"type": "progress", "data": {"status": "generating content"}})
+            
+            # Generate full content
+            if prompt and not content:
+                content = call_llm(prompt, max_tokens=2048)
+                await websocket.send_json({"type": "progress", "data": {"status": "content generated"}})
+            
+            # Generate document
+            doc_bytes = generate_word_document(
+                title=request.title or "Documento",
+                content=content,
+                sections=request.sections
+            )
+            
+            # Stream file progress
+            await websocket.send_json({"type": "progress", "data": {"status": "generating document", "size": len(doc_bytes)}})
+            
+            # Send final result
+            await websocket.send_json({
+                "type": "complete",
+                "data": {
+                    "status": "success",
+                    "filename": Path(request.output_path or "/tmp/output.docx").name,
+                    "file_size": len(doc_bytes),
+                    "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                }
+            })
+        
+        await stream_progress()
+        
+    except Exception as e:
+        logger.error(f"Error in interactive generation: {e}")
+        await websocket.send_json({"type": "error", "data": str(e)})
+    finally:
+        active_websockets.pop(websocket.id, None)
+
+
+@app.post("/documents/pdf/generate-interactive", tags=["Document Generation"])
+async def generate_pdf_interactive(websocket: WebSocket):
+    """Generate PDF document with streaming output."""
+    try:
+        await websocket.accept()
+    except Exception as e:
+        logger.error(f"Failed to accept websocket: {e}")
+        raise HTTPException(500, f"Failed to accept websocket: {e}")
+    
+    request = PdfGenerationRequest()
+    try:
+        # Generate content using LLM
+        prompt = request.prompt
+        content = request.content
+        
+        if prompt and not content:
+            content = call_llm(prompt, max_tokens=2048)
+        
+        async def stream_progress():
+            """Stream progress to websocket."""
+            await websocket.send_json({"type": "progress", "data": {"status": "generating content"}})
+            
+            # Generate full content
+            if prompt and not content:
+                content = call_llm(prompt, max_tokens=2048)
+                await websocket.send_json({"type": "progress", "data": {"status": "content generated"}})
+            
+            # Generate PDF
+            pdf_bytes = generate_pdf_document(
+                title=request.title or "Documento",
+                content=content,
+                format=request.format or "markdown"
+            )
+            
+            await websocket.send_json({"type": "progress", "data": {"status": "generating document", "size": len(pdf_bytes)}})
+            
+            await websocket.send_json({
+                "type": "complete",
+                "data": {
+                    "status": "success",
+                    "filename": Path(request.output_path or "/tmp/output.pdf").name,
+                    "file_size": len(pdf_bytes),
+                    "content_type": "application/pdf"
+                }
+            })
+        
+        await stream_progress()
+        
+    except Exception as e:
+        logger.error(f"Error in interactive PDF generation: {e}")
+        await websocket.send_json({"type": "error", "data": str(e)})
+    finally:
+        active_websockets.pop(websocket.id, None)
 
 
 # Helper functions
@@ -393,72 +602,158 @@ def create_extract_prompt(content: str, prompt: str) -> str:
     return f"{prompt}\n\n{content}"
 
 
-def call_llm(prompt: str, max_tokens: int = 2048) -> str:
-    """Call llama.cpp via ggc-llama-server or local llama-server."""
-    import requests
+def generate_word_document(title: str, content: str, sections: Optional[List[Dict]] = None) -> bytes:
+    """Generate a Word document (.docx) from content."""
+    if not DOCX_AVAILABLE:
+        raise ImportError("python-docx is required for Word document generation. Install with: pip install python-docx")
     
+    doc = Document()
+    
+    # Add title
+    doc.add_heading(title, 0)
+    
+    # Add sections if provided
+    if sections:
+        for section in sections:
+            if section.get("type") == "header":
+                doc.add_heading(section.get("text"), section.get("level", 1))
+            elif section.get("type") == "paragraph":
+                doc.add_paragraph(section.get("text"))
+            elif section.get("type") == "table":
+                doc.add_table(section.get("columns", 3))
+                for row in section.get("rows", []):
+                    for cell in row:
+                        doc.table.add_row([doc.run(cell)])
+    
+    # Add main content
+    if content:
+        for line in content.split('\n'):
+            line = line.strip()
+            if line:
+                doc.add_paragraph(line)
+    
+    return doc.docx
+
+
+def generate_pdf_document(title: str, content: str, format: str = "markdown") -> bytes:
+    """Generate a PDF document from content.
+    
+    Since we don't have reportlab installed, we'll convert to Markdown first,
+    then use a simple approach to generate PDF using markdown-to-pdf pipeline.
+    """
+    import subprocess
+    import tempfile
+    
+    # Generate markdown content
+    md_content = f"# {title}\n\n{content}\n\n---\n*Generated by AI-CLI*\n"
+    
+    # Try to use pandoc if available
     try:
-        test_url = f"http://localhost:{LLAMA_PORT}/v1/chat/completions"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write(md_content)
+            temp_md = f.name
+        
+        output_pdf = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+        output_path = output_pdf.name
+        
+        # Convert markdown to PDF using pandoc
+        result = subprocess.run(
+            ['pandoc', '-from', 'markdown', '-o', output_path, temp_md],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        if result.returncode == 0:
+            # Read the PDF file
+            with open(output_path, 'rb') as f:
+                return f.read()
+        else:
+            return md_content.encode('utf-8')
+    
+    except FileNotFoundError:
+        # pandoc not available, return markdown as fallback
+        return md_content.encode('utf-8')
+    except Exception as e:
+        raise Exception(f"PDF generation failed: {str(e)}")
+
+
+def markdown_to_html(md_content: str) -> str:
+    """Convert Markdown to HTML."""
+    import re
+    
+    # Headers
+    md_content = re.sub(r'^(#{1,6}) (.+)$', r'<\1>\2\n', md_content, flags=re.MULTILINE)
+    
+    # Paragraphs
+    md_content = re.sub(r'(?m)^(?!<(?:br|em|strong|code|pre|ul|li|ol|dl|dt|dd|div|p|h[1-6]))\s*(.+)$', r'\1', md_content)
+    
+    # Bold and italic
+    md_content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', md_content)
+    md_content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', md_content)
+    
+    # Code blocks
+    md_content = re.sub(r'```(?:\w+)?\n(.*?)```', r'<pre><code>\n\1\n</code></pre>', md_content, flags=re.DOTALL)
+    
+    # Inline code
+    md_content = re.sub(r'`(.+?)`', r'<code>\1</code>', md_content)
+    
+    # Links
+    md_content = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', md_content)
+    
+    # Lists
+    md_content = re.sub(r'^[\-\*]\s+(.+)$', r'<li>\1</li>', md_content, flags=re.MULTILINE)
+    
+    # Newlines to paragraph breaks
+    md_content = re.sub(r'(?m)\n\n+', '\n\n', md_content)
+    
+    return md_content.strip()
+
+
+def call_llm(prompt: str, max_tokens: int = 2048) -> str:
+    """Call remote LLM service on port 1234 (llama.cpp with llama-cpp-python)."""
+    import requests
+
+    try:
+        test_url = f"http://localhost:1234/v1/completions"
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        
+
         payload = {
-            "model": "qwen-9b",
-            "messages": [{"role": "user", "content": prompt}],
+            "model": "localmodel",
+            "prompt": prompt,
             "max_tokens": max_tokens,
-            "stream": True
+            "temperature": 0.7
         }
-        
+
         try:
             response = requests.post(test_url, headers=headers, json=payload, timeout=max_tokens + 10)
-            
+
             if response.status_code == 200:
-                full_response = ""
-                for line in response.iter_lines():
-                    if line:
-                        line_str = line.decode('utf-8')
-                        if line_str.startswith('data: '):
-                            data = line_str[6:].strip()
-                            if data == '[DONE]':
-                                break
-                            try:
-                                chunk = json.loads(data)
-                                full_response += chunk.get('choices', [{}])[0].get('delta', {}).get('content', '')
-                            except json.JSONDecodeError:
-                                pass
-                return full_response
-            
+                data = response.json()
+                content = data.get('choices', [{}])[0].get('text', '') or data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                return content
+
         except Exception as e:
             logger.warning(f"llama.cpp server error: {e}, trying local server...")
             local_url = "http://127.0.0.1:11434/v1/chat/completions"
             response = requests.post(local_url, headers=headers, json=payload, timeout=max_tokens + 10)
-            
+
             if response.status_code == 200:
-                full_response = ""
-                for line in response.iter_lines():
-                    if line:
-                        line_str = line.decode('utf-8')
-                        if line_str.startswith('data: '):
-                            data = line_str[6:].strip()
-                            if data == '[DONE]':
-                                break
-                            try:
-                                chunk = json.loads(data)
-                                full_response += chunk.get('choices', [{}])[0].get('delta', {}).get('content', '')
-                            except json.JSONDecodeError:
-                                pass
-                return full_response
-            
+                data = response.json()
+                content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                return content
+
     except Exception as e:
         logger.error(f"LLM call failed: {e}")
         raise HTTPException(500, f"Error calling LLM: {str(e)}")
-    
+
     return ""
 
 
 # Entry point
 def main():
     """Main entry point for the backend server."""
-    uvicorn.run("server:app", host="0.0.0.0", port=LLAMA_PORT, reload=False, workers=1, log_level="info")
+    uvicorn.run("server:app", host="0.0.0.0", port=3094, reload=False, workers=1, log_level="info")
 
 
 if __name__ == "__main__":

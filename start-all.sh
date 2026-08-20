@@ -98,6 +98,16 @@ else
     exit 1
 fi
 
+# Start frontend server
+echo ""
+print_status "info" "Starting Frontend Server..."
+cd /home/termihoe/Documents/ai-cli/frontend
+FRONTEND_PORT=${FRONTEND_PORT:-5173} node scripts/start.js &
+
+sleep 2
+
+print_status "success" "Frontend Server started on http://localhost:$FRONTEND_PORT"
+
 # Check for additional services to start
 # TODO: Add more services as needed
 
@@ -106,9 +116,10 @@ print_status "success" "All services started successfully!"
 echo ""
 echo "Services:"
 echo "  - Backend Server: http://localhost:$BACKEND_PORT"
+echo "  - Frontend Server: http://localhost:$FRONTEND_PORT"
 echo "  - (Add more services as needed)"
 echo ""
 print_status "info" "Services running. Press Ctrl+C to stop all services."
 
 # Trap to clean up on exit
-trap 'echo ""; print_status "warning" "Shutting down services..."; pkill -f "uvicorn server:app" 2>/dev/null || true; exit 0' INT TERM
+trap 'echo ""; print_status "warning" "Shutting down services..."; pkill -f "uvicorn server:app" 2>/dev/null || true; pkill -f "node scripts/start.js" 2>/dev/null || true; exit 0' INT TERM
