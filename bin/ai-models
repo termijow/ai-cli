@@ -182,16 +182,90 @@ REC_SIZE=$(echo "$RECS" | cut -d'|' -f1)
 REC_LAYERS=$(echo "$RECS" | cut -d'|' -f2)
 REC_STATUS=$(echo "$RECS" | cut -d'|' -f3)
 
-echo -e "\n${GREEN}✔ Modelo seleccionado:${NC} ${BOLD}$SELECTED_MODEL${NC} ($REC_SIZE GB)"
-echo -e "✦ Recomendación para tu RX 6600 (8GB): ${BOLD}$REC_LAYERS capas en GPU${NC}"
-echo -e "✦ $REC_STATUS"
+echo -e "\n${GREEN}✔ Modelo seleccionado:${NC} ${BOLD}$SELECTED_MODEL${NC} ($REC_SIZE GB)\n✦ Recomendación para tu RX 6600 (8GB): ${BOLD}$REC_LAYERS capas en GPU${NC}\n✦ $REC_STATUS"
 
 read -p "✦ ¿Cuántas capas en GPU deseas asignar? [$REC_LAYERS]: " custom_layers
 GPU_LAYERS=${custom_layers:-$REC_LAYERS}
 
+# --- Selector de Contexto ---
+CURRENT_CTX=$(grep "^AI_CTX_SIZE=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+CURRENT_CTX=${CURRENT_CTX:-4096}
+
+# Contexto máximo seguro según tamaño del modelo (con KV cache q4_0)
+CTX_TIER=$(awk -v gb="$REC_SIZE" 'BEGIN {
+    if      (gb+0 <= 7.0)  print "small"   # 9B y menores → 40k OK
+    else if (gb+0 <= 11.0) print "medium"  # 27B → máx ~16k seguro
+    else                   print "large"   # 35B+ → máx 8k seguro
+}')
+
+echo -e "\n${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
+echo -e "${BLUE}│${NC} ${YELLOW}📏 TAMAÑO DE CONTEXTO (tokens)${NC}                        ${BLUE}│${NC}"
+echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${NC}"
+
+case "$CTX_TIER" in
+    small)
+        echo -e "${BLUE}│${NC}  ${BOLD}1)${NC}  4,096  — Ligero, respuestas cortas                     ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}2)${NC}  8,192  — Estándar, archivos medianos                   ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}3)${NC} 16,384  — Grande, proyectos completos                   ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}4)${NC} 32,768  — Muy grande                                    ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}5)${NC} 40,960  — Máximo recomendado para este modelo ✅        ${NC}"
+        echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+        echo -e "  Actual: ${GREEN}${CURRENT_CTX}${NC} tokens\n"
+        read -p "Elige [1-5] o escribe valor custom (Enter = mantener ${CURRENT_CTX}): " ctx_opt
+        case "$ctx_opt" in
+            1) NEW_CTX=4096   ;;
+            2) NEW_CTX=8192   ;;
+            3) NEW_CTX=16384  ;;
+            4) NEW_CTX=32768  ;;
+            5) NEW_CTX=40960  ;;
+            "") NEW_CTX=$CURRENT_CTX ;;
+            *) NEW_CTX=$ctx_opt ;;
+        esac
+        ;;
+    medium)
+        echo -e "${BLUE}│${NC}  ${BOLD}1)${NC}  4,096  — Ligero, rápido                               ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}2)${NC}  8,192  — Recomendado para 27B ✅                      ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}3)${NC} 16,384  — Grande (puede reducir tok/s)                 ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}4)${NC} 24,576  — Máximo con spill a RAM ⚠️                   ${NC}"
+        echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+        echo -e "  Actual: ${GREEN}${CURRENT_CTX}${NC} tokens\n"
+        read -p "Elige [1-4] o escribe valor custom (Enter = mantener ${CURRENT_CTX}): " ctx_opt
+        case "$ctx_opt" in
+            1) NEW_CTX=4096   ;;
+            2) NEW_CTX=8192   ;;
+            3) NEW_CTX=16384  ;;
+            4) NEW_CTX=24576  ;;
+            "") NEW_CTX=$CURRENT_CTX ;;
+            *) NEW_CTX=$ctx_opt ;;
+        esac
+        ;;
+    large)
+        echo -e "${BLUE}│${NC}  ${BOLD}1)${NC}  2,048  — Mínimo, máxima velocidad                    ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}2)${NC}  4,096  — Recomendado para 35B ✅                      ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}3)${NC}  8,192  — Largo, requiere menos GPU layers ⚠️          ${NC}"
+        echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+        echo -e "  Actual: ${GREEN}${CURRENT_CTX}${NC} tokens\n"
+        read -p "Elige [1-3] o escribe valor custom (Enter = mantener ${CURRENT_CTX}): " ctx_opt
+        case "$ctx_opt" in
+            1) NEW_CTX=2048  ;;
+            2) NEW_CTX=4096  ;;
+            3) NEW_CTX=8192  ;;
+            "") NEW_CTX=$CURRENT_CTX ;;
+            *) NEW_CTX=$ctx_opt ;;
+        esac
+        ;;
+esac
+
+echo -e "\n${CYAN}📏 Contexto: ${BOLD}${NEW_CTX} tokens${NC}"
+
 # Actualizar .env
 sed -i "s|^MODEL_FILE=.*|MODEL_FILE=$SELECTED_MODEL|" "$ENV_FILE"
 sed -i "s|^AI_GPU_LAYERS=.*|AI_GPU_LAYERS=$GPU_LAYERS|" "$ENV_FILE"
+if grep -q "^AI_CTX_SIZE=" "$ENV_FILE"; then
+    sed -i "s|^AI_CTX_SIZE=.*|AI_CTX_SIZE=$NEW_CTX|" "$ENV_FILE"
+else
+    echo "AI_CTX_SIZE=$NEW_CTX" >> "$ENV_FILE"
+fi
 
 # Si el repo no está configurado, actualizarlo con nombre estándar
 if ! grep -q "^MODEL_REPO=" "$ENV_FILE"; then
