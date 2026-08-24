@@ -1,6 +1,0 @@
-pyproject.toml
-parsers/__init__.py
-parsers.egg-info/PKG-INFO
-parsers.egg-info/SOURCES.txt
-parsers.egg-info/dependency_links.txt
-parsers.egg-info/top_level.txt
