@@ -1,125 +1,150 @@
 #!/bin/bash
+# ==============================================================================
 # AI-CLI Services Startup Script
-# Starts all backend services for the AI-CLI application
+# Starts Backend (FastAPI :3094) and Frontend (Vite :5173) cleanly
+# ==============================================================================
 
 set -e
 
-echo "🚀 Starting AI-CLI Services..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$SCRIPT_DIR/backend"
+FRONTEND_DIR="$SCRIPT_DIR/frontend"
 
-# Colors for output
+# Virtualenv Python detection
+if [[ -f "$SCRIPT_DIR/venv/bin/python" ]]; then
+    PYTHON_BIN="$SCRIPT_DIR/venv/bin/python"
+elif command -v python3 &>/dev/null; then
+    PYTHON_BIN="python3"
+else
+    echo "❌ ERROR: No se encontró Python 3."
+    exit 1
+fi
+
+# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'
+NC='\033[0m'
 
-# Configuration
 BACKEND_PORT=${BACKEND_PORT:-3094}
 BACKEND_HOST=${BACKEND_HOST:-0.0.0.0}
+FRONTEND_PORT=${FRONTEND_PORT:-5173}
 
-# Function to print colored output
 print_status() {
     local status=$1
     local message=$2
     case $status in
-        "success")
-            echo -e "${GREEN}✓${NC} $message"
-            ;;
-        "warning")
-            echo -e "${YELLOW}⚠${NC} $message"
-            ;;
-        "info")
-            echo -e "${BLUE}ℹ${NC} $message"
-            ;;
-        "error")
-            echo -e "${RED}✗${NC} $message"
-            exit 1
-            ;;
+        "success") echo -e "${GREEN}✓${NC} $message" ;;
+        "warning") echo -e "${YELLOW}⚠${NC} $message" ;;
+        "info")    echo -e "${BLUE}ℹ${NC} $message" ;;
+        "error")   echo -e "${RED}✗${NC} $message"; exit 1 ;;
     esac
 }
 
-# Function to check if port is in use
+# Handle 'stop' or 'down' upfront
+if [[ "$1" == "stop" || "$1" == "down" ]]; then
+    pkill -f "uvicorn server:app" 2>/dev/null || true
+    pkill -f "vite" 2>/dev/null || true
+    fuser -k 3094/tcp 2>/dev/null || true
+    fuser -k 5173/tcp 2>/dev/null || true
+    print_status "success" "Servicios backend y frontend detenidos."
+    exit 0
+fi
+
 port_in_use() {
     local port=$1
     if command -v ss &> /dev/null; then
-        ss -tln | grep -q ":$port "
+        ss -tln 2>/dev/null | grep -q ":$port "
     elif command -v netstat &> /dev/null; then
-        netstat -tln | grep -q ":$port "
+        netstat -tln 2>/dev/null | grep -q ":$port "
     elif command -v lsof &> /dev/null; then
-        lsof -i -P -n | grep -q ":$port"
+        lsof -i -P -n 2>/dev/null | grep -q ":$port"
     else
         return 1
     fi
 }
 
-# Function to wait for port to be available
-wait_for_port() {
-    local port=$1
-    local max_attempts=30
-    local attempt=1
-    while port_in_use $port && [ $attempt -le $max_attempts ]; do
-        print_status "warning" "Port $port is in use, waiting..."
-        sleep 2
-        ((attempt++))
-    done
-    if port_in_use $port; then
-        print_status "error" "Failed to release port $port after $((max_attempts * 2)) seconds"
-        exit 1
-    fi
-}
+echo -e "\n${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
+echo -e "${BLUE}│${NC} ${YELLOW}🚀 INICIANDO SERVICIOS AI-CLI (Backend + Frontend)${NC}      ${BLUE}│${NC}"
+echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}\n"
 
-# Function to check if service is running
-is_service_running() {
-    local port=$1
-    local service=$2
-    if port_in_use $port; then
-        # Check if the specific service is responding
-        if curl -s --max-time 5 "http://localhost:$port/${service}/health" > /dev/null 2>&1; then
-            return 0
-        fi
-    fi
-    return 1
-}
+# 1. Start Backend Server
+print_status "info" "Iniciando Backend Server en puerto $BACKEND_PORT..."
 
-# Start backend server
-echo ""
-print_status "info" "Starting Backend Server..."
-wait_for_port $BACKEND_PORT
-
-cd /home/termihoe/Documents/ai-cli/backend
-nohup /home/termihoe/Documents/ai-cli/venv/bin/python -m uvicorn server:app --host $BACKEND_HOST --port $BACKEND_PORT --log-level info > /home/termihoe/Documents/ai-cli/backend/server.log 2>&1 &
-
-sleep 3
-
-# Check if backend started successfully
-if is_service_running $BACKEND_PORT "health"; then
-    print_status "success" "Backend Server started on http://$BACKEND_HOST:$BACKEND_PORT"
-else
-    print_status "error" "Backend Server failed to start"
-    exit 1
+if port_in_use "$BACKEND_PORT"; then
+    print_status "warning" "Puerto $BACKEND_PORT en uso. Reiniciando proceso..."
+    pkill -f "uvicorn server:app" 2>/dev/null || true
+    sleep 1
 fi
 
-# Start frontend server
-echo ""
-print_status "info" "Starting Frontend Server..."
-cd /home/termihoe/Documents/ai-cli/frontend
-FRONTEND_PORT=${FRONTEND_PORT:-5173} node scripts/start.js &
+cd "$BACKEND_DIR"
+if command -v setsid &>/dev/null; then
+    setsid "$PYTHON_BIN" -m uvicorn server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --log-level info < /dev/null > "$BACKEND_DIR/server.log" 2>&1 &
+else
+    nohup "$PYTHON_BIN" -m uvicorn server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --log-level info < /dev/null > "$BACKEND_DIR/server.log" 2>&1 &
+fi
+BACKEND_PID=$!
+disown "$BACKEND_PID" 2>/dev/null || true
 
 sleep 2
 
-print_status "success" "Frontend Server started on http://localhost:$FRONTEND_PORT"
+# Check Backend Health
+if curl -s --max-time 5 "http://127.0.0.1:$BACKEND_PORT/health" | grep -q "healthy"; then
+    print_status "success" "Backend Server activo: http://localhost:$BACKEND_PORT"
+else
+    print_status "warning" "Backend iniciando en segundo plano..."
+fi
 
-# Check for additional services to start
-# TODO: Add more services as needed
+# 2. Start Frontend Server
+echo ""
+print_status "info" "Iniciando Frontend Server en puerto $FRONTEND_PORT..."
 
-echo ""
-print_status "success" "All services started successfully!"
-echo ""
-echo "Services:"
-echo "  - Backend Server: http://localhost:$BACKEND_PORT"
-echo "  - Frontend Server: http://localhost:$FRONTEND_PORT"
-echo "  - (Add more services as needed)"
-echo ""
-print_status "info" "Services running. Press Ctrl+C to stop all services."
+if port_in_use "$FRONTEND_PORT"; then
+    print_status "warning" "Puerto $FRONTEND_PORT en uso. Reiniciando proceso..."
+    pkill -f "vite" 2>/dev/null || true
+    sleep 1
+fi
 
-# Trap to clean up on exit
-trap 'echo ""; print_status "warning" "Shutting down services..."; pkill -f "uvicorn server:app" 2>/dev/null || true; pkill -f "node scripts/start.js" 2>/dev/null || true; exit 0' INT TERM
+cd "$FRONTEND_DIR"
+if command -v setsid &>/dev/null; then
+    setsid npx vite --port "$FRONTEND_PORT" --host < /dev/null > "$FRONTEND_DIR/vite.log" 2>&1 &
+else
+    nohup npx vite --port "$FRONTEND_PORT" --host < /dev/null > "$FRONTEND_DIR/vite.log" 2>&1 &
+fi
+FRONTEND_PID=$!
+disown "$FRONTEND_PID" 2>/dev/null || true
+
+sleep 2
+print_status "success" "Frontend Server activo: http://localhost:$FRONTEND_PORT (PID: $FRONTEND_PID)"
+
+echo -e "\n${GREEN}╭──────────────────────────────────────────────────────────╮${NC}"
+echo -e "${GREEN}│${NC} ${GREEN}✨ TODOS LOS SERVICIOS ESTÁN EN EJECUCIÓN${NC}                ${GREEN}│${NC}"
+echo -e "${GREEN}├──────────────────────────────────────────────────────────┤${NC}"
+echo -e "${GREEN}│${NC} 🌐 Frontend Web Studio: ${YELLOW}http://localhost:$FRONTEND_PORT${NC}"
+echo -e "${GREEN}│${NC} ⚙️  Backend REST API:    ${YELLOW}http://localhost:$BACKEND_PORT${NC}"
+echo -e "${GREEN}│${NC} 🧠 LLM llama-server:   ${YELLOW}http://localhost:${LLAMA_PORT:-1234}${NC}"
+echo -e "${GREEN}╰──────────────────────────────────────────────────────────╯${NC}\n"
+
+# If launched in daemon mode, exit cleanly
+if [[ "$1" == "--daemon" || "$1" == "-d" ]]; then
+    echo "Servicios corriendo en segundo plano. Usa './start-all.sh stop' o 'ai services stop' para detenerlos."
+    exit 0
+fi
+
+# Interactive mode trap
+cleanup() {
+    echo -e "\n${YELLOW}⚠ Deteniendo servicios AI-CLI...${NC}"
+    kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+    pkill -f "uvicorn server:app" 2>/dev/null || true
+    pkill -f "vite" 2>/dev/null || true
+    print_status "success" "Servicios detenidos correctamente."
+    exit 0
+}
+
+trap cleanup INT TERM
+
+echo -e "${BLUE}ℹ Presiona Ctrl+C para detener ambos servicios.${NC}\n"
+while true; do
+    sleep 2
+done

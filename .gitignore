@@ -1,30 +1,51 @@
-# Logs and history
-.history.json
-.history.json.bak
-.history.json.*
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
 
-# Savings and history data
+# Distribution / packaging
+*.egg-info/
+.installed.cfg
+*.egg
+build/
+dist/
+
+# Virtual Environment
+venv/
+.venv/
+env/
+.env.local
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.vite-temp/
+
+# Large Model files (store locally, not in git)
+models/*.gguf
+models/*/*.gguf
+*.gguf
+
+# Logs and runtime history
+*.log
+backend/*.log
+.history.json
+.history.json.*
 .ai_cli_savings
-.ai_cli_history
 .ai_cli_history/
+.ai_cli_db.db
+.ai_cli_db.db-journal
 
 # Temporary files
 *.tmp
 *.bak
-
-# Qwen bin scripts (runtime only)
-.qwen/bin/
-
-# Git
-.git
-.gitignore
-
-# IDE
-.idea
-.vscode
 *.swp
 *.swo
 
-# OS
+# IDE & OS
+.idea/
+.vscode/
 .DS_Store
 Thumbs.db

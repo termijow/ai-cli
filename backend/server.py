@@ -1,49 +1,131 @@
 #!/usr/bin/env python3
 """
-ai-cli backend server - FastAPI server with llama.cpp integration
+server.py - AI-CLI FastAPI Backend Server
+Integrates local llama.cpp instance with Document Parser, WhatsApp Analyzer,
+Document Generation (Word/PDF), and REST APIs for the AI-CLI Web UI.
 """
 
-import asyncio
-import json
+import io
 import os
 import sys
+import json
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel, Field
+import requests
 import uvicorn
 
-# Try to import python-docx for Word document generation
+# Setup paths and environment
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from backend.document_parser import DocumentParser, parser
+from backend.whatsapp_parser import WhatsAppParser, whatsapp_parser
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("ai-cli-backend")
+
+# Try to import python-docx
 try:
-    from docx import Document
-    from docx.shared import Inches, Pt
+    import docx
+    from docx.shared import Pt, RGBColor, Inches
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
-    DOCX_AVAILABLE = False  # Keep for compatibility
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Configuration from environment / .env
+LLAMA_PORT = int(os.environ.get("LLAMA_PORT", os.environ.get("PORT", 1234)))
+LLAMA_HOST = os.environ.get("LLAMA_HOST", "127.0.0.1")
+LLAMA_URL = f"http://{LLAMA_HOST}:{LLAMA_PORT}"
+LLAMA_TIMEOUT = int(os.environ.get("LLAMA_TIMEOUT", 600))  # Default: 10 minutes (600s)
 
-# Configuration
-SCRIPT_DIR = Path(__file__).parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+# Uploads directory
+UPLOADS_DIR = PROJECT_ROOT / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True)
 
-# Model configuration
-MODEL_PATH = PROJECT_ROOT / "models" / "Qwen3.5-4B-Q4_K_M.gguf"
-LLAMA_CPP_SERVER = PROJECT_ROOT / "llama-server"
-LLAMA_PORT = os.environ.get("LLAMA_PORT", 1234)
-MAX_TOKENS = 4096
-TEMPERATURE = 0.7
 
-# Global FastAPI app
-app = FastAPI(title="AI CLI Backend", description="Backend API for AI document processing", version="1.0.0")
-active_websockets: Dict[str, WebSocket] = {}
+# --- Pydantic Models ---
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., description="User prompt or question")
+    context: Optional[str] = Field(None, description="Document or selection text context")
+    file: Optional[str] = Field(None, description="Optional document context or filename alias")
+    system_prompt: Optional[str] = Field(None, description="Optional system instructions")
+    max_tokens: Optional[int] = Field(40960, description="Max generation tokens (full context support up to 40k)")
+    temperature: Optional[float] = Field(0.7, description="Sampling temperature")
+
+
+class ObsidianExportRequest(BaseModel):
+    vault_path: Optional[str] = Field(None, description="Custom Obsidian vault directory path")
+    chat_file: Optional[str] = Field(None, description="Specific chat file to export")
+
+
+class DocumentOperation(BaseModel):
+    operation: Optional[str] = Field("process", description="Operation: summarize, translate, extract, rephrase")
+    document_type: Optional[str] = Field("text", description="Document type: pdf, docx, md, text")
+    content: Optional[str] = Field(None, description="Document raw text content")
+    text: Optional[str] = Field(None, description="Alternative text payload")
+    file_path: Optional[str] = Field(None, description="Path to file on disk")
+    language: Optional[str] = Field(None, description="Target language for translation")
+    targetLanguage: Optional[str] = Field(None, description="Target language alias")
+    sourceLanguage: Optional[str] = Field(None, description="Source language alias")
+    prompt: Optional[str] = Field(None, description="Custom prompt instructions")
+    extract_type: Optional[str] = Field(None, description="Extraction mode: entities, dates, numbers, summary")
+    type: Optional[str] = Field(None, description="Extraction type alias")
+    length: Optional[str] = Field("medium", description="Summary length: short, medium, long")
+    format: Optional[str] = Field("text", description="Summary format: text, markdown")
+    max_tokens: Optional[int] = Field(2048, description="Maximum tokens")
+
+
+class DocxGenerationRequest(BaseModel):
+    title: Optional[str] = Field("Documento", description="Document title")
+    content: Optional[str] = Field("", description="Document body content")
+    prompt: Optional[str] = Field(None, description="Optional prompt to generate content via LLM")
+    output_path: Optional[str] = Field(None, description="Optional output file path")
+    sections: Optional[List[Dict[str, Any]]] = Field(None, description="Optional structured sections")
+
+
+class PdfGenerationRequest(BaseModel):
+    title: Optional[str] = Field("Documento", description="Document title")
+    content: Optional[str] = Field("", description="Document content (markdown supported)")
+    prompt: Optional[str] = Field(None, description="Optional prompt to generate content via LLM")
+    format: Optional[str] = Field("markdown", description="Format: markdown or text")
+    output_path: Optional[str] = Field(None, description="Optional output file path")
+
+
+class WhatsAppAnalyzeRequest(BaseModel):
+    chat_text: str = Field(..., description="Raw text exported from WhatsApp")
+    prompt_override: Optional[str] = Field(None, description="Optional custom extraction prompt")
+
+
+# --- Lifespan Context Manager ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 AI-CLI Backend starting up...")
+    logger.info(f"LLM Server Target: {LLAMA_URL}")
+    yield
+    logger.info("🛑 AI-CLI Backend shut down successfully.")
+
+
+# --- FastAPI Application ---
+
+app = FastAPI(
+    title="AI-CLI Backend API",
+    description="Unified Backend API for AI Document Processing, WhatsApp Analysis & LLM Services",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,706 +136,695 @@ app.add_middleware(
 )
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifespan context manager."""
-    logger.info("Starting AI CLI Backend server...")
-    logger.info(f"Model path: {MODEL_PATH}")
-    logger.info(f"LLAMA_CPP_SERVER: {LLAMA_CPP_SERVER}")
+# --- LLM Helper Functions ---
 
-    # Start websocket savings handler in background
-    from bin.websocket_savings_handler import SavingsServer
-    savings_server = SavingsServer()
-    savings_task = asyncio.create_task(savings_server.start())
+def query_llama_cpp(
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    max_tokens: int = 2048,
+    temperature: float = 0.7
+) -> Dict[str, Any]:
+    """
+    Call local llama.cpp server OpenAI-compatible chat endpoint.
+    Fallback to completions endpoint if chat endpoint is not available.
+    """
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    else:
+        messages.append({"role": "system", "content": "Eres un asistente de IA inteligente, preciso y servicial."})
 
-    yield
+    messages.append({"role": "user", "content": prompt})
 
-    logger.info("Shutting down AI CLI Backend server...")
-    savings_task.cancel()
+    chat_url = f"{LLAMA_URL}/v1/chat/completions"
+    payload = {
+        "model": "localmodel",
+        "messages": messages,
+        "max_tokens": min(max_tokens, 40960),
+        "temperature": temperature,
+        "stream": False
+    }
+
     try:
-        await savings_task
-    except asyncio.CancelledError:
-        pass
-
-    for ws in active_websockets.values():
-        await ws.close()
-
-    logger.info("Server shutdown complete")
-
-
-# Pydantic models
-class DocumentOperation(BaseModel):
-    """Request body for document operations."""
-    operation: str = Field(..., description="Operation: summarize, translate, modify, extract")
-    document_type: str = Field(..., description="Type: pdf, docx, md, text")
-    content: Optional[str] = Field(None, description="Document content if file not provided")
-    file_path: Optional[str] = Field(None, description="Path to document file")
-    language: Optional[str] = Field(None, description="Source/target language for translation")
-    prompt: Optional[str] = Field(None, description="Custom prompt for operation")
-    max_tokens: Optional[int] = Field(2048, description="Maximum output tokens")
-
-
-class TokenTracking(BaseModel):
-    """Token tracking for savings calculation."""
-    input_tokens: int = 0
-    output_tokens: int = 0
-
-
-class DocxGenerationRequest(BaseModel):
-    """Request for Word document generation."""
-    title: Optional[str] = Field(None, description="Document title")
-    content: Optional[str] = Field(None, description="Document content")
-    prompt: Optional[str] = Field(None, description="Custom prompt for content generation")
-    output_path: Optional[str] = Field("/tmp/output.docx", description="Path to save the generated document")
-    sections: Optional[List[Dict]] = Field(None, description="List of sections to add (headers, paragraphs)")
-
-
-class PdfGenerationRequest(BaseModel):
-    """Request for PDF document generation."""
-    title: Optional[str] = Field(None, description="Document title")
-    content: Optional[str] = Field(None, description="Document content")
-    prompt: Optional[str] = Field(None, description="Custom prompt for content generation")
-    output_path: Optional[str] = Field("/tmp/output.pdf", description="Path to save the generated document")
-    format: Optional[str] = Field("markdown", description="Output format: markdown, html, or text")
-
-# Endpoints
-
-@app.on_event("startup")
-async def startup_event():
-    """Startup event - initialize llama.cpp connection."""
-    logger.info("Starting backend server...")
-    logger.info(f"Model: {MODEL_PATH}")
-    logger.info(f"LLAMA_CPP_SERVER: {LLAMA_CPP_SERVER}")
-    
-    try:
-        import requests
-        test_url = f"http://localhost:{LLAMA_PORT}/v1/chat/completions"
-        headers = {"Accept": "application/json"}
-        response = requests.post(test_url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            logger.info("Successfully connected to llama.cpp server")
-        else:
-            logger.warning(f"llama.cpp server returned {response.status_code}")
+        resp = requests.post(chat_url, json=payload, timeout=LLAMA_TIMEOUT)
+        if resp.status_code == 200:
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            usage = data.get("usage", {})
+            tokens_used = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+            return {"content": content, "tokens_used": tokens_used}
     except Exception as e:
-        logger.warning(f"Could not connect to llama.cpp server: {e}")
+        logger.warning(f"Chat completions failed on {chat_url}: {e}, trying completions fallback...")
+
+    # Fallback to /v1/completions
+    compl_url = f"{LLAMA_URL}/v1/completions"
+    compl_payload = {
+        "model": "localmodel",
+        "prompt": f"{system_prompt or ''}\n\nUser: {prompt}\n\nAssistant:",
+        "max_tokens": min(max_tokens, 40960),
+        "temperature": temperature
+    }
+    try:
+        resp = requests.post(compl_url, json=compl_payload, timeout=LLAMA_TIMEOUT)
+        if resp.status_code == 200:
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("text", "")
+            usage = data.get("usage", {})
+            tokens_used = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+            return {"content": content, "tokens_used": tokens_used}
+    except Exception as e:
+        logger.error(f"Completions fallback failed on {compl_url}: {e}")
+
+    # Return mock or offline message if LLM is not responding
+    return {
+        "content": "⚠️ No se pudo comunicar con el servidor de LLM (llama-server). Verifica que esté iniciado en el puerto 1234 con 'ai serve' o 'ai services start'.",
+        "tokens_used": 0
+    }
 
 
-@app.get("/health", tags=["Health"])
+def create_docx_bytes(title: str, content: str, sections: Optional[List[Dict[str, Any]]] = None) -> bytes:
+    """Create DOCX bytes in memory safely using python-docx with strict Arial 18/16/14/12 typography in black (#000000)."""
+    if not DOCX_AVAILABLE:
+        raise ImportError("python-docx no está instalado. Instala con: pip install python-docx")
+
+    import re
+    doc = docx.Document()
+
+    # Configure 1 inch margins
+    for s in doc.sections:
+        s.top_margin = Inches(1)
+        s.bottom_margin = Inches(1)
+        s.left_margin = Inches(1)
+        s.right_margin = Inches(1)
+
+    # Style: Normal
+    style_normal = doc.styles['Normal']
+    style_normal.font.name = 'Arial'
+    style_normal.font.size = Pt(12)
+    style_normal.font.color.rgb = RGBColor(0, 0, 0)
+    style_normal.font.bold = False
+
+    lines = content.splitlines() if content else []
+
+    if sections:
+        for section in sections:
+            sec_title = section.get("title") or section.get("header")
+            if sec_title:
+                p = doc.add_paragraph()
+                run = p.add_run(sec_title)
+                run.font.name = 'Arial'
+                run.font.size = Pt(16)
+                run.font.bold = True
+                run.font.color.rgb = RGBColor(0, 0, 0)
+            sec_content = section.get("content") or section.get("text", "")
+            if sec_content:
+                for line in str(sec_content).splitlines():
+                    if line.strip():
+                        p = doc.add_paragraph()
+                        run = p.add_run(line.strip())
+                        run.font.name = 'Arial'
+                        run.font.size = Pt(12)
+                        run.font.bold = False
+                        run.font.color.rgb = RGBColor(0, 0, 0)
+
+    # Parse content line by line (including Markdown tables)
+    is_first_line = True
+    i = 0
+    while i < len(lines):
+        raw_line = lines[i].strip()
+        if not raw_line:
+            i += 1
+            continue
+
+        # Ignore dummy "Documento_1" / "Documento_2" line
+        if re.match(r"^Documento_\d+$", raw_line, re.IGNORECASE):
+            i += 1
+            continue
+
+        # Page break
+        if raw_line in ("---", "***", "___", "[Salto de página]", "[Salto de pagina]"):
+            doc.add_page_break()
+            i += 1
+            continue
+
+        # Markdown Table Detection (| Header 1 | Header 2 |)
+        if raw_line.startswith("|") and raw_line.endswith("|") and raw_line.count("|") >= 2:
+            table_lines = []
+            while i < len(lines) and lines[i].strip().startswith("|") and lines[i].strip().endswith("|"):
+                table_lines.append(lines[i].strip())
+                i += 1
+
+            # Parse table rows
+            table_rows = []
+            for t_line in table_lines:
+                # Skip separator lines like |---|---|
+                if re.match(r"^\|(\s*:?-+:?\s*\|)+$", t_line):
+                    continue
+                cells = [c.strip() for c in t_line.strip("|").split("|")]
+                if any(cells):
+                    table_rows.append(cells)
+
+            if table_rows:
+                num_cols = max(len(r) for r in table_rows)
+                for r in table_rows:
+                    while len(r) < num_cols:
+                        r.append("")
+
+                table = doc.add_table(rows=len(table_rows), cols=num_cols)
+                table.style = 'Table Grid'
+                for r_idx, row_data in enumerate(table_rows):
+                    for c_idx, cell_value in enumerate(row_data):
+                        cell = table.cell(r_idx, c_idx)
+                        cell.text = cell_value
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                run.font.name = 'Arial'
+                                run.font.size = Pt(11)
+                                run.font.bold = (r_idx == 0)
+                                run.font.color.rgb = RGBColor(0, 0, 0)
+            continue
+
+        # H1 (# Title)
+        if raw_line.startswith("# ") and not raw_line.startswith("## "):
+            text = raw_line[2:].strip()
+            p = doc.add_paragraph()
+            run = p.add_run(text)
+            run.font.name = 'Arial'
+            run.font.size = Pt(18)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(0, 0, 0)
+        # H2 (## Title or 1. Section, 2. Section)
+        elif (raw_line.startswith("## ") and not raw_line.startswith("### ")) or re.match(r"^\d+\.\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]", raw_line):
+            text = raw_line[3:].strip() if raw_line.startswith("## ") else raw_line
+            p = doc.add_paragraph()
+            run = p.add_run(text)
+            run.font.name = 'Arial'
+            run.font.size = Pt(16)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(0, 0, 0)
+        # H3 (### Title or 1.1. Subsection, 2.1. Subsection)
+        elif raw_line.startswith("### ") or re.match(r"^\d+\.\d+\.?\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]", raw_line):
+            text = raw_line[4:].strip() if raw_line.startswith("### ") else raw_line
+            p = doc.add_paragraph()
+            run = p.add_run(text)
+            run.font.name = 'Arial'
+            run.font.size = Pt(14)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(0, 0, 0)
+        # Bullet list
+        elif re.match(r"^[-*•]\s+", raw_line):
+            text = re.sub(r"^[-*•]\s+", "", raw_line)
+            p = doc.add_paragraph(style='List Bullet')
+            run = p.add_run(text)
+            run.font.name = 'Arial'
+            run.font.size = Pt(12)
+            run.font.bold = False
+            run.font.color.rgb = RGBColor(0, 0, 0)
+        # First non-header line that acts as main title
+        elif is_first_line and len(raw_line) < 120 and not raw_line.endswith('.'):
+            p = doc.add_paragraph()
+            run = p.add_run(raw_line)
+            run.font.name = 'Arial'
+            run.font.size = Pt(18)
+            run.font.bold = True
+            run.font.color.rgb = RGBColor(0, 0, 0)
+        # Normal paragraph
+        else:
+            p = doc.add_paragraph()
+            run = p.add_run(raw_line)
+            run.font.name = 'Arial'
+            run.font.size = Pt(12)
+            run.font.bold = False
+            run.font.color.rgb = RGBColor(0, 0, 0)
+
+        is_first_line = False
+        i += 1
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# --- API Routes ---
+
+@app.get("/health", tags=["System"])
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "ai-cli-backend"}
+    return {
+        "status": "healthy",
+        "service": "ai-cli-backend",
+        "version": "1.0.0",
+        "llama_url": LLAMA_URL
+    }
 
 
 @app.get("/model/info", tags=["Model"])
-async def model_info():
-    """Return information about the loaded model."""
+async def get_model_info():
+    """Check connection to llama-server and get model metadata."""
+    is_online = False
+    model_name = os.environ.get("MODEL_FILE", "Qwen3.5-9B-GGUF")
     try:
-        import requests
-        test_url = f"http://localhost:{LLAMA_PORT}/v1/models"
-        response = requests.get(test_url, timeout=5)
-        if response.status_code == 200:
-            return {
-                "status": "success",
-                "model": response.json().get("root", {}),
-                "server": f"http://localhost:{LLAMA_PORT}"
-            }
-    except Exception as e:
-        logger.warning(f"Could not fetch model info: {e}")
+        resp = requests.get(f"{LLAMA_URL}/v1/models", timeout=3)
+        if resp.status_code == 200:
+            is_online = True
+            models_data = resp.json().get("data", resp.json().get("models", []))
+            if models_data and isinstance(models_data, list):
+                model_name = models_data[0].get("id", model_name)
+    except Exception:
+        is_online = False
+
     return {
-        "status": "success",
-        "model": {
-            "path": str(MODEL_PATH),
-            "name": "Qwen3.5-9B-GGUF",
-            "quantization": "Q4_K_M"
+        "status": "online" if is_online else "offline",
+        "model": model_name,
+        "server_url": LLAMA_URL,
+        "port": LLAMA_PORT,
+        "features": {
+            "docx_generation": DOCX_AVAILABLE,
+            "pdf_parsing": True,
+            "whatsapp_analysis": True,
+            "multi_format_parser": True
         }
     }
-
-
-@app.post("/documents/{document_type}/summarize", tags=["Documents"])
-async def summarize_document(document_type: str, request: DocumentOperation, websocket: WebSocket):
-    """Summarize a document of the specified type."""
-    if document_type not in ["pdf", "docx", "md", "text"]:
-        raise HTTPException(400, "Invalid document type")
-    
-    input_tokens = 0
-    output_tokens = 0
-    
-    try:
-        await websocket.accept()
-        active_websockets[websocket.id] = websocket
-        
-        content = None
-        if request.file_path:
-            content = read_file_content(request.file_path)
-        elif request.content:
-            content = request.content
-        
-        if not content:
-            raise HTTPException(400, "No content provided")
-        
-        prompt = create_summarize_prompt(content, request.prompt)
-        llm_response = call_llm(prompt, max_tokens=request.max_tokens or MAX_TOKENS)
-        
-        async for chunk in llm_response:
-            await websocket.send_json({"type": "stream", "data": chunk})
-            input_tokens += 1
-            output_tokens += len(chunk)
-        
-        await websocket.send_json({
-            "type": "complete",
-            "data": llm_response,
-            "tokens_used": input_tokens + output_tokens
-        })
-        
-        await websocket.send_json({
-            "type": "tokens_update",
-            "data": {
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "savings": 0.000015,
-                "timestamp": "now"
-            }
-        })
-        
-    except WebSocketDisconnect:
-        await websocket.close()
-    except Exception as e:
-        logger.error(f"Error during summarization: {e}")
-        raise HTTPException(500, f"Error: {str(e)}")
-    
-    finally:
-        active_websockets.pop(websocket.id, None)
-
-
-@app.post("/documents/{document_type}/translate", tags=["Documents"])
-async def translate_document(document_type: str, request: DocumentOperation, websocket: WebSocket):
-    """Translate a document from source language to target language."""
-    if document_type not in ["pdf", "docx", "md", "text"]:
-        raise HTTPException(400, "Invalid document type")
-    
-    input_tokens = 0
-    output_tokens = 0
-    
-    try:
-        await websocket.accept()
-        active_websockets[websocket.id] = websocket
-        
-        content = request.content or read_file_content(request.file_path)
-        if not content:
-            raise HTTPException(400, "No content provided")
-        
-        prompt = create_translate_prompt(content, request.language)
-        llm_response = call_llm(prompt, max_tokens=request.max_tokens or MAX_TOKENS)
-        
-        async for chunk in llm_response:
-            await websocket.send_json({"type": "stream", "data": chunk})
-            input_tokens += 1
-            output_tokens += len(chunk)
-        
-        await websocket.send_json({
-            "type": "complete",
-            "data": llm_response,
-            "tokens_used": input_tokens + output_tokens
-        })
-        
-    except WebSocketDisconnect:
-        await websocket.close()
-    except Exception as e:
-        logger.error(f"Error during translation: {e}")
-        raise HTTPException(500, f"Error: {str(e)}")
-    
-    finally:
-        active_websockets.pop(websocket.id, None)
-
-
-@app.post("/documents/{document_type}/extract", tags=["Documents"])
-async def extract_from_document(document_type: str, request: DocumentOperation, websocket: WebSocket):
-    """Extract specific content from a document."""
-    if document_type not in ["pdf", "docx", "md", "text"]:
-        raise HTTPException(400, "Invalid document type")
-    
-    input_tokens = 0
-    output_tokens = 0
-    
-    try:
-        await websocket.accept()
-        active_websockets[websocket.id] = websocket
-        
-        content = request.content or read_file_content(request.file_path)
-        if not content:
-            raise HTTPException(400, "No content provided")
-        
-        prompt = create_extract_prompt(content, request.prompt)
-        llm_response = call_llm(prompt, max_tokens=request.max_tokens or MAX_TOKENS)
-        
-        async for chunk in llm_response:
-            await websocket.send_json({"type": "stream", "data": chunk})
-            input_tokens += 1
-            output_tokens += len(chunk)
-        
-        await websocket.send_json({
-            "type": "complete",
-            "data": llm_response,
-            "tokens_used": input_tokens + output_tokens
-        })
-        
-    except WebSocketDisconnect:
-        await websocket.close()
-    except Exception as e:
-        logger.error(f"Error during extraction: {e}")
-        raise HTTPException(500, f"Error: {str(e)}")
-    
-    finally:
-        active_websockets.pop(websocket.id, None)
 
 
 @app.post("/chat", tags=["Chat"])
-async def chat_with_llm(message: str):
-    """Chat with the LLM directly."""
-    import requests
-    input_tokens = 0
-    output_tokens = 0
+async def chat_endpoint(request: ChatRequest):
+    """Chat with the local LLM with full context up to 40k tokens and auto-compaction."""
+    ctx = (request.context or request.file or "").strip()
 
-    try:
-        # Call llama.cpp v1/chat/completions endpoint
-        test_url = f"http://localhost:{LLAMA_PORT}/v1/chat/completions"
-        payload = {
-            "model": "localmodel",
-            "messages": [{"role": "user", "content": f"You are helpful assistant. {message}"}],
-            "stream": False
-        }
-        response = requests.post(test_url, json=payload, timeout=10)
-        data = response.json()
+    # Intelligent compaction if context exceeds 120,000 characters (~30k tokens)
+    if len(ctx) > 120000:
+        logger.info(f"Context size ({len(ctx)} chars, ~{len(ctx)//4} tokens) exceeds 30k threshold. Applying auto-compaction.")
+        ctx = ctx[:60000] + "\n\n[... CONTENIDO INTERMEDIO COMPACTADO AUTOMÁTICAMENTE (>30K TOKENS) ...]\n\n" + ctx[-50000:]
 
-        llm_response = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        input_tokens = data.get("usage", {}).get("prompt_tokens", 0)
-        output_tokens = data.get("usage", {}).get("completion_tokens", 0)
+    if ctx:
+        full_prompt = f"=== CONTEXTO DEL DOCUMENTO O SELECCIÓN ===\n{ctx}\n\n=== INSTRUCCIÓN DEL USUARIO ===\n{request.message}"
+    else:
+        full_prompt = request.message
 
-        return {
-            "content": llm_response,
-            "tokens_used": input_tokens + output_tokens
-        }
+    max_tokens = request.max_tokens or 40960
 
-    except Exception as e:
-        logger.error(f"Error during chat: {e}")
-        raise HTTPException(500, f"Error: {str(e)}")
+    llm_res = query_llama_cpp(
+        prompt=full_prompt,
+        system_prompt=request.system_prompt or "Eres un editor y redactor profesional de documentos.",
+        max_tokens=max_tokens,
+        temperature=request.temperature or 0.7
+    )
 
-
-@app.post("/stats", tags=["Stats"])
-async def get_stats():
-    """Get statistics about the backend."""
-    try:
-        import requests
-        test_url = f"http://localhost:{LLAMA_PORT}/v1/models"
-        response = requests.get(test_url, timeout=5)
-        models = response.json().get("root", {}).get("models", [])
-
-        return {
-            "status": "success",
-            "model_count": len(models),
-            "model_path": str(MODEL_PATH),
-            "server": f"http://localhost:{LLAMA_PORT}",
-            "features": {
-                "word_generation": DOCX_AVAILABLE,
-                "pdf_generation": True
-            }
-        }
-    except Exception as e:
-        logger.warning(f"Could not fetch stats: {e}")
     return {
-        "status": "success",
-        "model_path": str(MODEL_PATH),
-        "features": {
-            "word_generation": DOCX_AVAILABLE,
-            "pdf_generation": True
-        }
+        "content": llm_res["content"],
+        "response": llm_res["content"],
+        "tokens_used": llm_res["tokens_used"]
     }
 
 
-# Document Generation Endpoints
+@app.post("/documents/parse", tags=["Documents"])
+async def parse_document_endpoint(
+    file: Optional[UploadFile] = File(None),
+    file_path: Optional[str] = Form(None),
+    content: Optional[str] = Form(None),
+    document_type: Optional[str] = Form(None)
+):
+    """
+    Parse an uploaded file or existing text into clean string content with metadata.
+    """
+    if file:
+        file_ext = Path(file.filename).suffix.lower()
+        temp_dest = UPLOADS_DIR / file.filename
+        file_bytes = await file.read()
+        with open(temp_dest, "wb") as f:
+            f.write(file_bytes)
+
+        result = parser.parse(str(temp_dest), document_type=file_ext)
+        return {
+            "success": result.success,
+            "filename": file.filename,
+            "content": result.content,
+            "metadata": result.metadata,
+            "error": result.error
+        }
+
+    if file_path:
+        result = parser.parse(file_path, document_type=document_type)
+        return {
+            "success": result.success,
+            "filename": Path(file_path).name,
+            "content": result.content,
+            "metadata": result.metadata,
+            "error": result.error
+        }
+
+    if content:
+        result = parser.parse_content(content, document_type=document_type or "text")
+        return {
+            "success": True,
+            "filename": "document.txt",
+            "content": result.content,
+            "metadata": result.metadata,
+            "error": None
+        }
+
+    raise HTTPException(status_code=400, detail="Debes proporcionar un archivo, una ruta (file_path) o contenido (content).")
+
+
+@app.post("/documents/{document_type}/summarize", tags=["Documents"])
+async def summarize_document(document_type: str, request: DocumentOperation):
+    """Summarize document content or file."""
+    text_content = request.content or request.text or ""
+    if not text_content and request.file_path:
+        parse_res = parser.parse(request.file_path, document_type=document_type)
+        text_content = parse_res.content
+
+    if not text_content.strip():
+        raise HTTPException(status_code=400, detail="No se proporcionó contenido para resumir.")
+
+    len_desc = {
+        "short": "un resumen breve y conciso en 2-3 oraciones o puntos clave",
+        "medium": "un resumen equilibrado destacando los puntos principales y conclusiones",
+        "long": "un resumen detallado y exhaustivo que cubra todas las secciones importantes"
+    }.get(request.length, "un resumen claro y bien estructurado")
+
+    format_desc = "en formato Markdown con viñetas y títulos claros" if request.format == "markdown" else "en texto fluido"
+
+    prompt = f"""Genera {len_desc} del siguiente documento {format_desc}.
+{request.prompt or ''}
+
+DOCUMENTO:
+{text_content}"""
+
+    llm_res = query_llama_cpp(prompt, max_tokens=request.max_tokens or 2048)
+    return {
+        "status": "success",
+        "summary": llm_res["content"],
+        "result": llm_res["content"],
+        "tokens_used": llm_res["tokens_used"]
+    }
+
+
+@app.post("/documents/{document_type}/translate", tags=["Documents"])
+async def translate_document(document_type: str, request: DocumentOperation):
+    """Translate text content to target language."""
+    text_content = request.content or request.text or ""
+    if not text_content and request.file_path:
+        parse_res = parser.parse(request.file_path, document_type=document_type)
+        text_content = parse_res.content
+
+    if not text_content.strip():
+        raise HTTPException(status_code=400, detail="No se proporcionó texto para traducir.")
+
+    target_lang = request.language or request.targetLanguage or "español"
+    prompt = f"""Traduce de forma fluida, natural y precisa el siguiente texto al idioma: {target_lang}.
+Mantén el formato original del documento.
+
+TEXTO ORIGINAL:
+{text_content}
+
+TRADUCCIÓN:"""
+
+    llm_res = query_llama_cpp(prompt, max_tokens=request.max_tokens or 2048)
+    return {
+        "status": "success",
+        "translatedText": llm_res["content"],
+        "result": llm_res["content"],
+        "target_language": target_lang,
+        "tokens_used": llm_res["tokens_used"]
+    }
+
+
+@app.post("/documents/{document_type}/extract", tags=["Documents"])
+async def extract_information(document_type: str, request: DocumentOperation):
+    """Extract key facts, entities, dates, or custom structured data from document."""
+    text_content = request.content or request.text or ""
+    if not text_content and request.file_path:
+        parse_res = parser.parse(request.file_path, document_type=document_type)
+        text_content = parse_res.content
+
+    if not text_content.strip():
+        raise HTTPException(status_code=400, detail="No se proporcionó contenido para extraer información.")
+
+    ext_type = request.extract_type or request.type or "entities"
+    instructions = {
+        "entities": "Extrae todas las entidades clave (Personas, Organizaciones, Lugares, Productos, Tecnologías) en formato JSON.",
+        "dates": "Extrae todas las fechas, plazos, cronogramas y momentos temporales mencionados en formato JSON con su contexto.",
+        "numbers": "Extrae todas las métricas, cantidades, precios, porcentajes y cifras numéricas en formato JSON.",
+        "summary": "Extrae los 5 puntos clave e insights fundamentales del documento."
+    }.get(ext_type, request.prompt or "Extrae la información más relevante en formato JSON estructurado.")
+
+    prompt = f"""{instructions}
+
+DOCUMENTO:
+{text_content}
+
+Responde con la información organizada y clara."""
+
+    llm_res = query_llama_cpp(prompt, max_tokens=request.max_tokens or 2048)
+    return {
+        "status": "success",
+        "extractedData": llm_res["content"],
+        "result": llm_res["content"],
+        "tokens_used": llm_res["tokens_used"]
+    }
+
 
 @app.post("/documents/word/generate", tags=["Document Generation"])
-async def generate_word_document(request: DocxGenerationRequest):
-    """Generate a Word document (.docx) using the LLM."""
+async def generate_word_document_api(request: DocxGenerationRequest):
+    """Generate Word (.docx) document using LLM or structured sections."""
     if not DOCX_AVAILABLE:
-        raise HTTPException(400, "python-docx is required. Install with: pip install python-docx")
-    
-    input_tokens = 0
-    output_tokens = 0
+        raise HTTPException(status_code=400, detail="python-docx no está disponible. Instálalo con: pip install python-docx")
+
+    content = request.content or ""
+    tokens_used = 0
+
+    if request.prompt and not content:
+        llm_res = query_llama_cpp(
+            prompt=f"Escribe el contenido completo y bien estructurado para un documento titulado '{request.title}'.\nInstrucciones: {request.prompt}",
+            max_tokens=3000
+        )
+        content = llm_res["content"]
+        tokens_used = llm_res["tokens_used"]
 
     try:
-        # Generate content using LLM if prompt is provided
-        prompt = request.prompt
-        content = request.content
-        
-        if prompt and not content:
-            content = call_llm(prompt, max_tokens=2048)
-        elif prompt and content:
-            content = f"{content}\n\n{call_llm(prompt, max_tokens=2048)}"
-        
-        if not content:
-            raise HTTPException(400, "No content generated")
-        
-        # Generate the Word document
-        doc_bytes = generate_word_document(
-            title=request.title or "Documento",
+        doc_bytes = create_docx_bytes(
+            title=request.title or "Documento Generado",
             content=content,
             sections=request.sections
         )
-        
-        return {
-            "status": "success",
-            "message": "Document generated successfully",
-            "filename": Path(request.output_path or "/tmp/output.docx").name,
-            "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "file_size": len(doc_bytes),
-            "tokens_used": {"input": input_tokens, "output": output_tokens}
-        }
-        
-    except ImportError as e:
-        raise HTTPException(400, f"Missing dependency: {str(e)}. Install with: pip install python-docx")
+
+        filename = f"{Path(request.title or 'documento').stem}.docx"
+
+        if request.output_path:
+            out_file = Path(request.output_path)
+            out_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_file, "wb") as f:
+                f.write(doc_bytes)
+
+        return Response(
+            content=doc_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
     except Exception as e:
-        logger.error(f"Error generating Word document: {e}")
-        raise HTTPException(500, f"Error generating document: {str(e)}")
+        logger.error(f"Error generating DOCX: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al generar documento Word: {str(e)}")
 
 
 @app.post("/documents/pdf/generate", tags=["Document Generation"])
-async def generate_pdf_document(request: PdfGenerationRequest):
-    """Generate a PDF document from content using the LLM."""
-    input_tokens = 0
-    output_tokens = 0
+async def generate_pdf_document_api(request: PdfGenerationRequest):
+    """Generate Markdown/PDF document."""
+    content = request.content or ""
+    tokens_used = 0
 
-    try:
-        # Generate content using LLM if prompt is provided
-        prompt = request.prompt
-        content = request.content
-        
-        if prompt and not content:
-            content = call_llm(prompt, max_tokens=2048)
-        elif prompt and content:
-            content = f"{content}\n\n{call_llm(prompt, max_tokens=2048)}"
-        
-        if not content:
-            raise HTTPException(400, "No content generated")
-        
-        # Generate the PDF document
-        pdf_bytes = generate_pdf_document(
-            title=request.title or "Documento",
-            content=content,
-            format=request.format or "markdown"
+    if request.prompt and not content:
+        llm_res = query_llama_cpp(
+            prompt=f"Escribe un documento profesional en formato Markdown titulado '{request.title}'.\nInstrucciones: {request.prompt}",
+            max_tokens=3000
         )
-        
-        return {
-            "status": "success",
-            "message": "PDF generated successfully",
-            "filename": Path(request.output_path or "/tmp/output.pdf").name,
-            "content_type": "application/pdf",
-            "file_size": len(pdf_bytes),
-            "tokens_used": {"input": input_tokens, "output": output_tokens}
-        }
-        
-    except Exception as e:
-        logger.error(f"Error generating PDF document: {e}")
-        raise HTTPException(500, f"Error generating document: {str(e)}")
+        content = llm_res["content"]
+        tokens_used = llm_res["tokens_used"]
+
+    full_md = f"# {request.title or 'Documento'}\n\n{content}\n\n---\n*Generado localmente con AI-CLI*"
+    return {
+        "status": "success",
+        "title": request.title,
+        "content": full_md,
+        "tokens_used": tokens_used
+    }
 
 
-@app.post("/documents/word/generate-interactive", tags=["Document Generation"])
-async def generate_word_interactive(websocket: WebSocket):
-    """Generate Word document with streaming output."""
-    if not DOCX_AVAILABLE:
-        raise HTTPException(400, "python-docx is required")
-    
-    try:
-        await websocket.accept()
-    except Exception as e:
-        logger.error(f"Failed to accept websocket: {e}")
-        raise HTTPException(500, f"Failed to accept websocket: {e}")
-    
-    request = DocxGenerationRequest()
-    try:
-        # Generate content using LLM
-        prompt = request.prompt
-        content = request.content
-        
-        if prompt and not content:
-            content = call_llm(prompt, max_tokens=2048)
-        
-        async def stream_progress():
-            """Stream progress to websocket."""
-            await websocket.send_json({"type": "progress", "data": {"status": "generating content"}})
-            
-            # Generate full content
-            if prompt and not content:
-                content = call_llm(prompt, max_tokens=2048)
-                await websocket.send_json({"type": "progress", "data": {"status": "content generated"}})
-            
-            # Generate document
-            doc_bytes = generate_word_document(
-                title=request.title or "Documento",
-                content=content,
-                sections=request.sections
-            )
-            
-            # Stream file progress
-            await websocket.send_json({"type": "progress", "data": {"status": "generating document", "size": len(doc_bytes)}})
-            
-            # Send final result
-            await websocket.send_json({
-                "type": "complete",
-                "data": {
-                    "status": "success",
-                    "filename": Path(request.output_path or "/tmp/output.docx").name,
-                    "file_size": len(doc_bytes),
-                    "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                }
-            })
-        
-        await stream_progress()
-        
-    except Exception as e:
-        logger.error(f"Error in interactive generation: {e}")
-        await websocket.send_json({"type": "error", "data": str(e)})
-    finally:
-        active_websockets.pop(websocket.id, None)
+@app.post("/whatsapp/parse", tags=["WhatsApp"])
+async def parse_whatsapp_chat(request: WhatsAppAnalyzeRequest):
+    """Parse WhatsApp exported chat transcript into statistics and structured message log."""
+    if not request.chat_text.strip():
+        raise HTTPException(status_code=400, detail="El texto del chat de WhatsApp está vacío.")
+
+    stats = whatsapp_parser.parse_text(request.chat_text)
+    return {
+        "status": "success",
+        "stats": stats
+    }
 
 
-@app.post("/documents/pdf/generate-interactive", tags=["Document Generation"])
-async def generate_pdf_interactive(websocket: WebSocket):
-    """Generate PDF document with streaming output."""
-    try:
-        await websocket.accept()
-    except Exception as e:
-        logger.error(f"Failed to accept websocket: {e}")
-        raise HTTPException(500, f"Failed to accept websocket: {e}")
-    
-    request = PdfGenerationRequest()
-    try:
-        # Generate content using LLM
-        prompt = request.prompt
-        content = request.content
-        
-        if prompt and not content:
-            content = call_llm(prompt, max_tokens=2048)
-        
-        async def stream_progress():
-            """Stream progress to websocket."""
-            await websocket.send_json({"type": "progress", "data": {"status": "generating content"}})
-            
-            # Generate full content
-            if prompt and not content:
-                content = call_llm(prompt, max_tokens=2048)
-                await websocket.send_json({"type": "progress", "data": {"status": "content generated"}})
-            
-            # Generate PDF
-            pdf_bytes = generate_pdf_document(
-                title=request.title or "Documento",
-                content=content,
-                format=request.format or "markdown"
-            )
-            
-            await websocket.send_json({"type": "progress", "data": {"status": "generating document", "size": len(pdf_bytes)}})
-            
-            await websocket.send_json({
-                "type": "complete",
-                "data": {
-                    "status": "success",
-                    "filename": Path(request.output_path or "/tmp/output.pdf").name,
-                    "file_size": len(pdf_bytes),
-                    "content_type": "application/pdf"
-                }
-            })
-        
-        await stream_progress()
-        
-    except Exception as e:
-        logger.error(f"Error in interactive PDF generation: {e}")
-        await websocket.send_json({"type": "error", "data": str(e)})
-    finally:
-        active_websockets.pop(websocket.id, None)
-
-
-# Helper functions
-
-def read_file_content(file_path: str) -> str:
-    """Read file content."""
-    full_path = Path(file_path)
-    if not full_path.exists():
-        return ""
-    with open(full_path, 'r', encoding='utf-8') as f:
-        return f.read()
-
-
-def create_summarize_prompt(content: str, custom_prompt: Optional[str] = None) -> str:
-    """Create a prompt for summarizing content."""
-    if custom_prompt:
-        return f"{custom_prompt}\n\n{content}"
-    return f"Please summarize the following text:\n\n{content}"
-
-
-def create_translate_prompt(content: str, language: str) -> str:
-    """Create a prompt for translation."""
-    if language:
-        return f"Translate the following text to {language}:\n\n{content}"
-    return f"Translate the following text:\n\n{content}"
-
-
-def create_extract_prompt(content: str, prompt: str) -> str:
-    """Create a prompt for extracting content."""
-    return f"{prompt}\n\n{content}"
-
-
-def generate_word_document(title: str, content: str, sections: Optional[List[Dict]] = None) -> bytes:
-    """Generate a Word document (.docx) from content."""
-    if not DOCX_AVAILABLE:
-        raise ImportError("python-docx is required for Word document generation. Install with: pip install python-docx")
-    
-    doc = Document()
-    
-    # Add title
-    doc.add_heading(title, 0)
-    
-    # Add sections if provided
-    if sections:
-        for section in sections:
-            if section.get("type") == "header":
-                doc.add_heading(section.get("text"), section.get("level", 1))
-            elif section.get("type") == "paragraph":
-                doc.add_paragraph(section.get("text"))
-            elif section.get("type") == "table":
-                doc.add_table(section.get("columns", 3))
-                for row in section.get("rows", []):
-                    for cell in row:
-                        doc.table.add_row([doc.run(cell)])
-    
-    # Add main content
-    if content:
-        for line in content.split('\n'):
-            line = line.strip()
-            if line:
-                doc.add_paragraph(line)
-    
-    return doc.docx
-
-
-def generate_pdf_document(title: str, content: str, format: str = "markdown") -> bytes:
-    """Generate a PDF document from content.
-    
-    Since we don't have reportlab installed, we'll convert to Markdown first,
-    then use a simple approach to generate PDF using markdown-to-pdf pipeline.
+@app.post("/whatsapp/analyze", tags=["WhatsApp"])
+async def analyze_whatsapp_chat(request: WhatsAppAnalyzeRequest):
     """
-    import subprocess
-    import tempfile
-    
-    # Generate markdown content
-    md_content = f"# {title}\n\n{content}\n\n---\n*Generated by AI-CLI*\n"
-    
-    # Try to use pandoc if available
-    try:
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-            f.write(md_content)
-            temp_md = f.name
-        
-        output_pdf = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
-        output_path = output_pdf.name
-        
-        # Convert markdown to PDF using pandoc
-        result = subprocess.run(
-            ['pandoc', '-from', 'markdown', '-o', output_path, temp_md],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        
-        if result.returncode == 0:
-            # Read the PDF file
-            with open(output_path, 'rb') as f:
-                return f.read()
-        else:
-            return md_content.encode('utf-8')
-    
-    except FileNotFoundError:
-        # pandoc not available, return markdown as fallback
-        return md_content.encode('utf-8')
-    except Exception as e:
-        raise Exception(f"PDF generation failed: {str(e)}")
+    Perform deep relationship analysis and entity extraction on WhatsApp chat using local LLM.
+    """
+    if not request.chat_text.strip():
+        raise HTTPException(status_code=400, detail="El texto del chat de WhatsApp está vacío.")
+
+    stats = whatsapp_parser.parse_text(request.chat_text)
+    prompt = request.prompt_override or whatsapp_parser.build_analysis_prompt(stats)
+
+    llm_res = query_llama_cpp(
+        prompt=prompt,
+        system_prompt="Eres un analista de relaciones y extractor de datos estructurados especializado en transcripciones de mensajería.",
+        max_tokens=3000,
+        temperature=0.3
+    )
+
+    return {
+        "status": "success",
+        "stats": stats,
+        "analysis_raw": llm_res["content"],
+        "tokens_used": llm_res["tokens_used"]
+    }
 
 
-def markdown_to_html(md_content: str) -> str:
-    """Convert Markdown to HTML."""
-    import re
-    
-    # Headers
-    md_content = re.sub(r'^(#{1,6}) (.+)$', r'<\1>\2\n', md_content, flags=re.MULTILINE)
-    
-    # Paragraphs
-    md_content = re.sub(r'(?m)^(?!<(?:br|em|strong|code|pre|ul|li|ol|dl|dt|dd|div|p|h[1-6]))\s*(.+)$', r'\1', md_content)
-    
-    # Bold and italic
-    md_content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', md_content)
-    md_content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', md_content)
-    
-    # Code blocks
-    md_content = re.sub(r'```(?:\w+)?\n(.*?)```', r'<pre><code>\n\1\n</code></pre>', md_content, flags=re.DOTALL)
-    
-    # Inline code
-    md_content = re.sub(r'`(.+?)`', r'<code>\1</code>', md_content)
-    
-    # Links
-    md_content = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', md_content)
-    
-    # Lists
-    md_content = re.sub(r'^[\-\*]\s+(.+)$', r'<li>\1</li>', md_content, flags=re.MULTILINE)
-    
-    # Newlines to paragraph breaks
-    md_content = re.sub(r'(?m)\n\n+', '\n\n', md_content)
-    
-    return md_content.strip()
+@app.post("/whatsapp/analyze-stream", tags=["WhatsApp"])
+async def analyze_whatsapp_stream_endpoint(request: WhatsAppAnalyzeRequest):
+    """
+    Stream real-time batch processing progress and accumulated entity extraction via Server-Sent Events (SSE).
+    """
+    if not request.chat_text.strip():
+        raise HTTPException(status_code=400, detail="El texto del chat de WhatsApp está vacío.")
 
+    from backend.whatsapp_analyzer_engine import LargeChatAnalyzer
+    engine = LargeChatAnalyzer(chunk_size_messages=150)
 
-def call_llm(prompt: str, max_tokens: int = 2048) -> str:
-    """Call remote LLM service on port 1234 (llama.cpp with llama-cpp-python)."""
-    import requests
+    def query_fn(prompt: str):
+        return query_llama_cpp(prompt, max_tokens=1500, temperature=0.2)
 
-    try:
-        test_url = f"http://localhost:1234/v1/completions"
-        headers = {"Accept": "application/json", "Content-Type": "application/json"}
-
-        payload = {
-            "model": "localmodel",
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": 0.7
-        }
-
+    async def event_generator():
         try:
-            response = requests.post(test_url, headers=headers, json=payload, timeout=max_tokens + 10)
-
-            if response.status_code == 200:
-                data = response.json()
-                content = data.get('choices', [{}])[0].get('text', '') or data.get('choices', [{}])[0].get('message', {}).get('content', '')
-                return content
-
+            async for event in engine.analyze_chat_stream(request.chat_text, query_fn):
+                payload = json.dumps(event, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
         except Exception as e:
-            logger.warning(f"llama.cpp server error: {e}, trying local server...")
-            local_url = "http://127.0.0.1:11434/v1/chat/completions"
-            response = requests.post(local_url, headers=headers, json=payload, timeout=max_tokens + 10)
+            err_payload = json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False)
+            yield f"data: {err_payload}\n\n"
 
-            if response.status_code == 200:
-                data = response.json()
-                content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
-                return content
-
-    except Exception as e:
-        logger.error(f"LLM call failed: {e}")
-        raise HTTPException(500, f"Error calling LLM: {str(e)}")
-
-    return ""
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-# Entry point
+@app.get("/whatsapp/dossiers", tags=["WhatsApp"])
+async def list_whatsapp_dossiers():
+    """List all saved dossiers and profiles in ~/.ai_cli_whatsapp."""
+    from backend.whatsapp_analyzer_engine import STORAGE_DIR
+    dossiers = []
+    if STORAGE_DIR.exists():
+        for f in STORAGE_DIR.glob("*_dossier.md"):
+            stat = f.stat()
+            json_path = f.parent / f"{f.stem.replace('_dossier', '_profile')}.json"
+            dossiers.append({
+                "id": f.stem,
+                "title": f.stem.replace("_dossier", "").replace("_", " ").title(),
+                "file_md": f.name,
+                "size_bytes": stat.st_size,
+                "modified": stat.st_mtime,
+                "has_json": json_path.exists()
+            })
+    return {"status": "success", "dossiers": dossiers}
+
+
+@app.get("/whatsapp/dossiers/{filename}", tags=["WhatsApp"])
+async def get_whatsapp_dossier_content(filename: str):
+    """Get the markdown content of a saved dossier."""
+    from backend.whatsapp_analyzer_engine import STORAGE_DIR
+    safe_name = Path(filename).name
+    file_path = STORAGE_DIR / safe_name
+    if not file_path.exists():
+        file_path = STORAGE_DIR / f"{safe_name}_dossier.md"
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dossier no encontrado.")
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    return {"status": "success", "filename": file_path.name, "content": content}
+
+
+@app.post("/whatsapp/export-obsidian", tags=["WhatsApp", "Obsidian"])
+async def export_to_obsidian_vault(request: Optional[ObsidianExportRequest] = None):
+    """Export parsed WhatsApp profiles and dossiers into an Obsidian Vault CRM."""
+    from backend.obsidian_vault_exporter import ObsidianVaultExporter
+    from backend.whatsapp_analyzer_engine import STORAGE_DIR
+
+    custom_vault = Path(request.vault_path) if request and request.vault_path else None
+    exporter = ObsidianVaultExporter(vault_path=custom_vault)
+
+    # Load all saved json profiles from STORAGE_DIR
+    json_files = list(STORAGE_DIR.glob("*_profile.json"))
+    if not json_files:
+        raise HTTPException(status_code=400, detail="No hay perfiles de WhatsApp analizados todavía. Analiza una conversación primero.")
+
+    all_contacts = []
+    total_events = 0
+
+    for jf in json_files:
+        try:
+            with open(jf, "r", encoding="utf-8") as f:
+                profile_data = json.load(f)
+            res = exporter.export_profile(profile_data)
+            all_contacts.extend(res.get("contacts_exported", []))
+            total_events += res.get("events_exported", 0)
+        except Exception as e:
+            logger.error(f"Error exporting {jf.name} to Obsidian: {e}")
+
+    return {
+        "status": "success",
+        "vault_path": str(exporter.vault_path),
+        "total_contacts": len(set(all_contacts)),
+        "contacts": list(set(all_contacts)),
+        "events_count": total_events,
+        "message": f"✓ Base de datos sincronizada con Obsidian en {exporter.vault_path}"
+    }
+
+
+@app.get("/whatsapp/obsidian-status", tags=["WhatsApp", "Obsidian"])
+async def get_obsidian_status():
+    """Get status of the WhatsApp Obsidian Vault."""
+    from backend.obsidian_vault_exporter import vault_exporter
+    return vault_exporter.get_status()
+
+
+@app.get("/documents/list", tags=["Documents"])
+async def list_uploaded_documents():
+    """List uploaded and cached documents available for processing."""
+    docs = []
+    if UPLOADS_DIR.exists():
+        for f in UPLOADS_DIR.iterdir():
+            if f.is_file() and f.suffix.lower() in [".txt", ".md", ".pdf", ".docx"]:
+                stat = f.stat()
+                docs.append({
+                    "name": f.name,
+                    "path": str(f),
+                    "size": stat.st_size,
+                    "type": f.suffix.lower().lstrip("."),
+                    "modified": stat.st_mtime
+                })
+    return {"status": "success", "documents": docs}
+
+
+# --- Server Runner ---
+
 def main():
-    """Main entry point for the backend server."""
-    uvicorn.run("server:app", host="0.0.0.0", port=3094, reload=False, workers=1, log_level="info")
+    port = int(os.environ.get("BACKEND_PORT", 3094))
+    host = os.environ.get("BACKEND_HOST", "0.0.0.0")
+    logger.info(f"Starting uvicorn server on {host}:{port}...")
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

@@ -130,24 +130,26 @@ call_llm_robust() {
     # Crear directorio de historial si no existe
     mkdir -p "$history_dir"
 
-    # Agregar entrada al historial
-    cat >> "$history_file" << EOF
-{
-  "timestamp": "$timestamp",
-  "query_type": "$query_type",
-  "prompt_tokens": $prompt_tokens,
-  "completion_tokens": $completion_tokens,
-  "savings": $total_saving,
-  "total_savings": $new_savings
-}
-EOF
+    # Agregar entrada al historial en formato JSONL (1 línea por consulta)
+    local json_entry
+    json_entry=$(jq -nc \
+        --arg ts "$timestamp" \
+        --arg qt "${query_type:-chat}" \
+        --argjson pt "$prompt_tokens" \
+        --argjson ct "$completion_tokens" \
+        --argjson sv "$total_saving" \
+        --argjson tsv "$new_savings" \
+        '{"timestamp":$ts, "query_type":$qt, "prompt_tokens":$pt, "completion_tokens":$ct, "savings":$sv, "total_savings":$tsv}' 2>/dev/null)
+    
+    if [[ -z "$json_entry" ]]; then
+        json_entry="{\"timestamp\":\"$timestamp\",\"query_type\":\"${query_type:-chat}\",\"prompt_tokens\":$prompt_tokens,\"completion_tokens\":$completion_tokens,\"savings\":$total_saving,\"total_savings\":$new_savings}"
+    fi
+    echo "$json_entry" >> "$history_file"
 
-    # Rotación: mantener solo las últimas 20 entradas
-    local MAX_HISTORY=20
-    local entry_count=$(wc -l < "$history_file" 2>/dev/null || echo 0)
-    if [[ $entry_count -gt $MAX_HISTORY ]]; then
-        local keep_count=$((entry_count - MAX_HISTORY))
-        head -n "$keep_count" "$history_file" > "${history_file}.tmp" && mv "${history_file}.tmp" "$history_file"
+    # Rotación: mantener las últimas 50 consultas
+    local MAX_HISTORY=50
+    if [[ -f "$history_file" ]]; then
+        tail -n "$MAX_HISTORY" "$history_file" > "${history_file}.tmp" 2>/dev/null && mv "${history_file}.tmp" "$history_file"
     fi
 
     # --- Fin Historial ---

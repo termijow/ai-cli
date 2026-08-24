@@ -97,7 +97,65 @@ if [[ $# -eq 0 ]]; then
     fi
 fi
 
+handle_services() {
+    local subaction="${1:-start}"
+    shift 2>/dev/null || true
+    if [[ ! -f "$PROJECT_ROOT/start-all.sh" ]]; then
+        echo "❌ No se encontró start-all.sh."
+        return 1
+    fi
+
+    case "$subaction" in
+        stop|down)
+            "$PROJECT_ROOT/start-all.sh" stop
+            ;;
+        status|check)
+            if [[ -f "$PROJECT_ROOT/master.py" ]]; then
+                "$PROJECT_ROOT/master.py" status
+            else
+                show_status
+            fi
+            ;;
+        daemon|-d|--daemon)
+            "$PROJECT_ROOT/start-all.sh" --daemon
+            ;;
+        restart)
+            "$PROJECT_ROOT/start-all.sh" stop
+            sleep 1
+            "$PROJECT_ROOT/start-all.sh" --daemon
+            ;;
+        open|browse)
+            local port=5173
+            if curl -s http://localhost:5174 | grep -q "AI-CLI"; then
+                port=5174
+            fi
+            if command -v xdg-open &>/dev/null; then
+                xdg-open "http://localhost:$port" &>/dev/null &
+                echo "🌐 Abriendo AI-CLI Studio en http://localhost:$port..."
+            fi
+            ;;
+        start)
+            exec "$PROJECT_ROOT/start-all.sh" "$@"
+            ;;
+        *)
+            exec "$PROJECT_ROOT/start-all.sh" "$subaction" "$@"
+            ;;
+    esac
+}
+
 case "$1" in
+    whatsapp|wa)
+        shift
+        if [[ -f "$PROJECT_ROOT/bin/ai-whatsapp" ]]; then
+            exec "$PROJECT_ROOT/venv/bin/python" "$PROJECT_ROOT/bin/ai-whatsapp" "$@"
+        else
+            echo "❌ No se encontró ai-whatsapp."
+        fi
+        ;;
+    services|service|studio|web|editor|start-all)
+        shift
+        handle_services "$@"
+        ;;
     menu|tui|dashboard|ui)
         if [[ -f "$PROJECT_ROOT/bin/ai-menu" ]]; then
             "$PROJECT_ROOT/bin/ai-menu"
@@ -128,9 +186,11 @@ case "$1" in
         fi
         ;;
     stop)
-        echo "🛑 Deteniendo servidor llama-server..."
+        echo "🛑 Deteniendo servidores..."
         pkill -f "llama-server" 2>/dev/null || true
-        echo "✓ Servidor detenido."
+        pkill -f "uvicorn server:app" 2>/dev/null || true
+        pkill -f "vite" 2>/dev/null || true
+        echo "✓ Servidores detenidos."
         ;;
     restart)
         echo "🔄 Reiniciando servidor..."
@@ -142,6 +202,9 @@ case "$1" in
         ;;
     status)
         show_status
+        if [[ -f "$PROJECT_ROOT/master.py" ]]; then
+            "$PROJECT_ROOT/master.py" status
+        fi
         ;;
     validate)
         if [[ -f "$PROJECT_ROOT/bin/ai-validate.sh" ]]; then
@@ -210,20 +273,24 @@ case "$1" in
         echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
         echo -e "\033[0;32m│\033[0m \033[1;36m📜 HISTORIAL RECIENTE\033[0m                              \033[0;32m│\033[0m"
         echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
-        if [[ -d "$HOME/.ai_cli_history" ]]; then
-            count=0
-            max_show=5
-            while IFS= read -r log; do
-                if [[ -n "$log" ]]; then
-                    details=$(cat "$log" 2>/dev/null)
-                    printf "\033[0;32m│\033[0m \033[1;33m%d. \033[0m$details\033[0m\n" "$((count+1))"
-                    ((count++))
-                fi
-            done < <(find "$HOME/.ai_cli_history" -maxdepth 1 -type f -printf "%T@ %p\n" 2>/dev/null | sort -rn | cut -d' ' -f2- | head -n "$max_show")
+        local history_file="$HOME/.ai_cli_history/queries.jsonl"
+        if [[ -f "$history_file" && -s "$history_file" ]]; then
+            local count=1
+            while IFS= read -r json_line; do
+                [[ -z "$json_line" ]] && continue
+                local ts=$(echo "$json_line" | jq -r '.timestamp // "N/A"' 2>/dev/null)
+                local qt=$(echo "$json_line" | jq -r '.query_type // "chat"' 2>/dev/null)
+                local sv=$(echo "$json_line" | jq -r '.savings // 0' 2>/dev/null)
+                local pt=$(echo "$json_line" | jq -r '.prompt_tokens // 0' 2>/dev/null)
+                local ct=$(echo "$json_line" | jq -r '.completion_tokens // 0' 2>/dev/null)
+                printf "\033[0;32m│\033[0m \033[1;33m%d.\033[0m %-19s | %-7s | %4s in / %4s out | \033[0;32m+$%-6s USD\033[0m \033[0;32m│\033[0m\n" \
+                    "$count" "$ts" "$qt" "$pt" "$ct" "$sv"
+                ((count++))
+            done < <(tail -n 5 "$history_file" | tac 2>/dev/null || tail -n 5 "$history_file")
         else
-            echo -e "\033[0;32m│\033[0m \033[1;31mNo hay historial de consultas aún\033[0m                \033[0;32m│\033[0m"
+            echo -e "\033[0;32m│\033[0m \033[1;31mNo hay historial de consultas aún\033[0m                        \033[0;32m│\033[0m"
         fi
-        echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
+        echo -e "\033[0;32m╰───────────────────────────────────────────────────────────╯\033[0m"
         ;;
     *)
         # Ejecutar el núcleo de AI-CLI

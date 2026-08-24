@@ -1,19 +1,21 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "node scripts/start.js",
-    "all": "cd /home/termihoe/Documents/ai-cli && node scripts/all.js",
-    "dev": "PORT=${PORT:-5173} vite",
+    "dev": "vite",
+    "start": "vite --port 5173 --host",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^1.33.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

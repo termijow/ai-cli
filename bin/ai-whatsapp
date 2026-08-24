@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""
+ai-whatsapp - AI-CLI WhatsApp Massive Chat Analyzer CLI
+Processes WhatsApp conversations of any length (up to 1M+ tokens) in batches
+with real-time progress bars, token tracking, and local entity/relationship extraction.
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Paths
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_ROOT = SCRIPT_PATH.parent.parent
+VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python"
+
+# Re-exec with virtualenv python if not already running in it
+if VENV_PYTHON.exists() and sys.executable != str(VENV_PYTHON):
+    os.execv(str(VENV_PYTHON), [str(VENV_PYTHON)] + sys.argv)
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "backend"))
+
+import glob
+import time
+import asyncio
+
+from backend.whatsapp_analyzer_engine import LargeChatAnalyzer, STORAGE_DIR
+from backend.server import query_llama_cpp
+
+try:
+    from rich.console import Console
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn, TaskProgressColumn
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.markdown import Markdown
+    RICH_AVAILABLE = True
+    console = Console()
+except ImportError:
+    RICH_AVAILABLE = False
+
+
+def print_banner():
+    if RICH_AVAILABLE:
+        console.print(Panel.fit(
+            "[bold green]💬 AI-CLI WhatsApp Chat & Relationship Analyzer[/bold green]\n"
+            "[dim]Procesamiento masivo por batches (10k a 1M+ tokens) con IA 100% local[/dim]",
+            border_style="green"
+        ))
+    else:
+        print("\n========================================================")
+        print("💬 AI-CLI WhatsApp Chat & Relationship Analyzer")
+        print("========================================================\n")
+
+
+def scan_for_chats() -> list:
+    """Scan common folders for exported WhatsApp .txt files."""
+    candidates = []
+    search_dirs = [
+        Path.home() / "Downloads",
+        Path.home() / "Descargas",
+        Path.home() / "Documents",
+        PROJECT_ROOT / "chats",
+        PROJECT_ROOT / "uploads",
+        Path.cwd()
+    ]
+
+    for d in search_dirs:
+        if d.exists():
+            for p in d.glob("*WhatsApp*.txt"):
+                if p.is_file() and p not in candidates:
+                    candidates.append(p)
+            for p in d.glob("*Chat de WhatsApp*.txt"):
+                if p.is_file() and p not in candidates:
+                    candidates.append(p)
+            for p in d.glob("*.txt"):
+                if p.is_file() and ("chat" in p.name.lower() or "whatsapp" in p.name.lower()) and p not in candidates:
+                    candidates.append(p)
+
+    return candidates
+
+
+def list_saved_dossiers():
+    """List previously analyzed profiles."""
+    md_files = list(STORAGE_DIR.glob("*_dossier.md"))
+    if not md_files:
+        print(f"No hay dossiers guardados aún en {STORAGE_DIR}")
+        return
+
+    if RICH_AVAILABLE:
+        table = Table(title="📁 Dossiers y Perfiles Guardados", border_style="green")
+        table.add_column("Contacto / Chat", style="bold cyan")
+        table.add_column("Tamaño", style="dim")
+        table.add_column("Última Modificación", style="yellow")
+        table.add_column("Ruta", style="dim")
+
+        for f in md_files:
+            stat = f.stat()
+            mod_time = time.strftime("%Y-%m-%d %H:%M", time.localtime(stat.st_mtime))
+            chat_name = f.stem.replace("_dossier", "").replace("_", " ").title()
+            table.add_row(chat_name, f"{stat.st_size / 1024:.1f} KB", mod_time, str(f))
+
+        console.print(table)
+    else:
+        print("Dossiers guardados:")
+        for f in md_files:
+            print(f"  • {f.name} ({f.stat().st_size} bytes)")
+
+
+def show_dossier(query: str):
+    """Display a stored dossier."""
+    matches = list(STORAGE_DIR.glob(f"*{query}*_dossier.md"))
+    if not matches:
+        print(f"❌ No se encontró dossier que coincida con '{query}' en {STORAGE_DIR}")
+        return
+
+    target = matches[0]
+    with open(target, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if RICH_AVAILABLE:
+        console.print(Markdown(content))
+    else:
+        print(content)
+
+
+async def run_analysis(file_path: Path):
+    """Run full batched analysis on chat file with progress bar."""
+    print_banner()
+
+    if not file_path.exists():
+        print(f"❌ Archivo no encontrado: {file_path}")
+        return
+
+    file_size_mb = file_path.stat().st_size / (1024 * 1024)
+    chat_title = file_path.stem.replace("Chat de WhatsApp con ", "").replace("WhatsApp Chat with ", "").strip()
+
+    if RICH_AVAILABLE:
+        console.print(f"📄 [bold]Archivo:[/bold] {file_path.name} ({file_size_mb:.2f} MB)")
+        console.print(f"👤 [bold]Conversación:[/bold] [cyan]{chat_title}[/cyan]")
+    else:
+        print(f"Archivo: {file_path.name} ({file_size_mb:.2f} MB)")
+        print(f"Conversación: {chat_title}")
+
+    # Read chat content
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            raw_text = f.read()
+    except UnicodeDecodeError:
+        with open(file_path, "r", encoding="latin-1") as f:
+            raw_text = f.read()
+
+    engine = LargeChatAnalyzer(chunk_size_messages=150)
+
+    # Prepare LLM query wrapper
+    def call_llm_sync(prompt: str) -> dict:
+        return query_llama_cpp(prompt, system_prompt="Eres un extractor de datos de WhatsApp. Responde directamente con el bloque JSON solicitado.", max_tokens=3000, temperature=0.1)
+
+    if RICH_AVAILABLE and sys.stdout.isatty():
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold green]{task.description}"),
+            BarColumn(bar_width=40),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            console=console
+        ) as progress:
+
+            main_task = progress.add_task("Analizando conversación...", total=100)
+            final_dossier = None
+
+            async for event in engine.analyze_chat_stream(raw_text, call_llm_sync, chat_title=chat_title):
+                event_type = event.get("type")
+
+                if event_type == "init":
+                    progress.update(
+                        main_task,
+                        description=f"[cyan]{chat_title}[/cyan] ({event['total_messages']:,} msgs en {event['total_chunks']} batches)",
+                        completed=event.get("percent", 10)
+                    )
+                elif event_type == "batch_start":
+                    progress.update(
+                        main_task,
+                        description=f"[yellow]Batch {event['batch_index']}/{event['total_batches']}:[/yellow] {event['date_range']}",
+                        completed=event.get("percent", 20)
+                    )
+                elif event_type == "batch_complete":
+                    progress.update(
+                        main_task,
+                        completed=event.get("percent", 50)
+                    )
+                elif event_type == "complete":
+                    progress.update(main_task, description="[bold green]✓ Análisis completado[/bold green]", completed=100)
+                    final_dossier = event
+
+            if final_dossier:
+                console.print(Panel(
+                    f"[bold green]✨ Dossier de Inteligencia Generado Exitosamente[/bold green]\n\n"
+                    f"📁 [bold]Markdown Guardado:[/bold] {final_dossier['saved_md']}\n"
+                    f"💾 [bold]JSON Guardado:[/bold] {final_dossier['saved_json']}\n"
+                    f"⚡ [bold]Tokens Procesados:[/bold] {final_dossier.get('total_tokens_spent', 0):,}",
+                    border_style="green"
+                ))
+
+                # Print Markdown dossier preview
+                console.print("\n" + "="*50 + " DOSSIER RESUMEN " + "="*50)
+                console.print(Markdown(final_dossier["markdown_dossier"]))
+
+    else:
+        # Clean stdout progress
+        print("\n🚀 Iniciando procesamiento por batches...")
+        final_dossier = None
+        async for event in engine.analyze_chat_stream(raw_text, call_llm_sync, chat_title=chat_title):
+            etype = event.get("type")
+            if etype == "init":
+                print(f"✓ Chat estructurado: {event['total_messages']} mensajes en {event['total_chunks']} fragmentos.")
+            elif etype == "batch_start":
+                print(f"  [>] Fragmento {event['batch_index']}/{event['total_batches']} ({event['date_range']}) [Progreso: {event.get('percent')}%]")
+            elif etype == "batch_complete":
+                print(f"  [✓] Fragmento {event['batch_index']}/{event['total_batches']} procesado con éxito.")
+            elif etype == "complete":
+                final_dossier = event
+                print(f"\n✅ ¡Análisis completado al 100%! Dossier guardado en:\n  📁 {event['saved_md']}\n  💾 {event['saved_json']}")
+
+        if final_dossier:
+            print("\n" + "="*50 + " DOSSIER RESUMEN " + "="*50)
+            print(final_dossier["markdown_dossier"])
+
+
+def interactive_select():
+    """Scan and let user choose a chat to analyze."""
+    print_banner()
+    print("🔍 Buscando exportaciones de WhatsApp en tu equipo...")
+    candidates = scan_for_chats()
+
+    if not candidates:
+        print("\n⚠️ No se encontraron archivos de chat automáticamente en Downloads/Documents.")
+        path_in = input("\nIntroduce la ruta manual al archivo .txt del chat: ").strip()
+        if path_in:
+            asyncio.run(run_analysis(Path(path_in).expanduser().resolve()))
+        return
+
+    print(f"\nSe encontraron {len(candidates)} conversaciones:")
+    for idx, c in enumerate(candidates, 1):
+        size_kb = c.stat().st_size / 1024
+        print(f"  {idx}) {c.name} ({size_kb:.1f} KB) - {c.parent}")
+
+    print("  0) Escribir ruta manual")
+
+    choice = input("\nElige una opción [1]: ").strip() or "1"
+    if choice == "0":
+        path_in = input("Introduce la ruta al archivo .txt: ").strip()
+        if path_in:
+            asyncio.run(run_analysis(Path(path_in).expanduser().resolve()))
+    else:
+        try:
+            sel_idx = int(choice) - 1
+            if 0 <= sel_idx < len(candidates):
+                asyncio.run(run_analysis(candidates[sel_idx]))
+            else:
+                print("Opción inválida.")
+        except ValueError:
+            print("Entrada inválida.")
+
+
+def main():
+    if len(sys.argv) == 1:
+        interactive_select()
+    else:
+        cmd = sys.argv[1]
+        if cmd in ["list", "saved", "dossiers"]:
+            list_saved_dossiers()
+        elif cmd in ["show", "view", "cat"] and len(sys.argv) > 2:
+            show_dossier(sys.argv[2])
+        elif cmd in ["scan", "find"]:
+            interactive_select()
+        elif Path(cmd).exists():
+            asyncio.run(run_analysis(Path(cmd).expanduser().resolve()))
+        else:
+            print(f"Uso:")
+            print(f"  ai whatsapp                     - Buscar y seleccionar chats interactivamente")
+            print(f"  ai whatsapp /ruta/chat.txt       - Analizar archivo específico con barra de progreso")
+            print(f"  ai whatsapp list                - Ver perfiles guardados")
+            print(f"  ai whatsapp show <contacto>     - Ver dossier de un contacto")
+
+
+if __name__ == "__main__":
+    main()

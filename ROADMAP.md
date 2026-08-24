@@ -1,181 +1,89 @@
 # Roadmap: AI Document Editor + WhatsApp Analyzer
 
 ## 📋 Resumen
-Este proyecto tiene dos componentes principales:
-1. **AI Document Editor**: Tool web local para analizar/editar documentos (Word, PDF, Markdown, Texto) con chat integrado
-2. **WhatsApp Analyzer**: Herramienta para analizar conversaciones y extraer datos de relaciones
+Este proyecto cuenta con dos suites principales integradas:
+1. **AI Document Studio**: Herramienta web local para analizar/editar documentos (Word, PDF, Markdown, Texto) con asistente de IA contextual y generación de documentos Word (.docx).
+2. **WhatsApp Analyzer**: Herramienta para analizar conversaciones exportadas, métricas de interacción, extracción de entidades (cumpleaños, direcciones, eventos) y notas de perfil con IA local.
+3. **Servicios Unificados**: Control centralizado mediante `ai services` (o `make start-all`).
 
 ---
 
-## 🎯 Fase 1: Documentos Básicos (MVP)
+## 🎯 Fase 1: Documentos Básicos (MVP) - ✅ Completado
 
 ### 1.1 Infraestructura Local
-- [ ] **Modelo local configurado** (ya hecho: Qwen3.5-9B-GGUF)
-- [ ] **llama-server** running (ya configurado en `.env`)
-- [ ] **Backend API** (FastAPI con llama.cpp)
-- [ ] **Web frontend** (Streamlit o React simple)
+- [X] **Modelo local configurado** (Qwen3.5 / Gemma en ROCm RX 6600)
+- [X] **llama-server** con soporte para *thinking level* y *reasoning budget*
+- [X] **Backend API** (FastAPI en puerto `:3094`)
+- [X] **Web frontend** (React 19 + Vite en puerto `:5173`)
 
 ### 1.2 Soporte de Formatos
-- [ ] **PDF Parsing**
-  - [ ] `pdfplumber` o `PyPDF2` para extraer texto
-  - [ ] Mantener estructura básica (títulos, párrafos)
-  
-- [ ] **Word Processing**
-  - [ ] `python-docx` para leer/escritor .docx
-  - [ ] Extraer títulos, párrafos, tablas
-  
-- [ ] **Markdown**
-  - [ ] `markdown` library (native)
-  - [ ] Soporte para encabezados, listas
-  
-- [ ] **Plain Text**
-  - [ ] Soporte nativo (ya disponible)
+- [X] **PDF Parsing** (`pdfplumber` para extracción de texto por páginas y metadatos)
+- [X] **Word Processing** (`python-docx` para lectura, extracción de párrafos/tablas y generación en memoria)
+- [X] **Markdown** (Soporte nativo y extracción de estructura de encabezados)
+- [X] **Plain Text** (Lectura multi-encoding con fallback)
 
 ### 1.3 Core Features
-- [ ] **Chat Interface**
-  - [ ] Input para documentos (file upload o paste)
-  - [ ] Input para prompts ("resúmmelo", "traduce esto", etc.)
-  - [ ] Stream de respuestas de llama.cpp
-  - [ ] Historial de conversaciones
-  
-- [ ] **Document Operations**
-  - [ ] **Resumir**: Extraer resumen del documento
-  - [ ] **Parafrear**: Rephrase texto específico/párrafo
-  - [ ] **Modificar**: "Cambia esta sección a otro tono"
-  - [ ] **Traducir**: Traducir documento completo o secciones
-  - [ ] **Extraer datos**: JSON de información clave
+- [X] **Editor de Documentos con Asistente Contextual** (Edición en vivo, conteo de palabras, historial y acciones rápidas)
+- [X] **Document Operations**:
+  - [X] **Resumir**: Resumen ajustable (corto, medio, largo) y multiformato
+  - [X] **Corregir / Rephrase**: Mejora de estilo y gramática
+  - [X] **Traducir**: Soporte para más de 10 idiomas
+  - [X] **Extraer datos**: Entidades, fechas, métricas y datos estructurados
 
 ---
 
-## 🎯 Fase 2: WhatsApp Analyzer (Avanzado)
+## 🎯 Fase 2: WhatsApp Analyzer (Avanzado) - ✅ Completado
 
 ### 2.1 WhatsApp Export & Processing
-- [ ] **Exportar conversaciones**
-  - [ ] Exportar desde WhatsApp Desktop (JSON/HTML)
-  - [ ] O API de Android (adb)
-  - [ ] Herramientas existentes: `wa2txt`, `wa2json`
-  
-- [ ] **Parsing de conversaciones**
-  - [ ] Extraer mensajes, fechas, remitentes
-  - [ ] Detectar respuestas entre pares
-  - [ ] Agrupar por contacto
+- [X] **Parsing de conversaciones**:
+  - [X] Soporte para formatos exportados de Android e iOS (12h y 24h)
+  - [X] Soporte para mensajes multilínea
+  - [X] Filtrado de mensajes de sistema y multimedia
 
 ### 2.2 Extractor de Datos (LLM Local)
-- [ ] **Entity Extraction**
-  - [ ] Nombres completos
-  - [ ] Direcciones
-  - [ ] Fechas de cumpleaños
-  - [ ] Edades aproximadas
-  - [ ] Lugares de encuentro
-  - [ ] Eventos importantes
-  
-- [ ] **Relationship Mapping**
-  - [ ] Detección de frecuencia de contacto
-  - [ ] Jerarquía de relación (amigo cercano, familiar, etc.)
-  - [ ] Historial de interacciones
+- [X] **Estadísticas de Chat**:
+  - [X] Conteo de mensajes, palabras, multimedia y ranking de participantes
+- [X] **Entity & Relationship Extraction**:
+  - [X] Detección de cumpleaños, direcciones, profesiones y notas
+  - [X] Detección de tipo de vínculo y tono de conversación
+  - [X] Extracción de fechas, eventos y compromisos pendientes
 
-### 2.3 Output de "Notas"
-- [ ] **JSON/Markdown de perfiles**
-  - [ ] Nombre: "Juan Pérez"
-  - [ ] Dirección: "Calle Falsa 123"
-  - [ ] Cumpleaños: "1990-05-15"
-  - [ ] Ubicación: "Ciudad de México"
-  - [ ] Contacto frecuente: "Semanal"
-  - [ ] Notas contextuales
-  
-- [ ] **Dashboard visual**
-  - [ ] Lista de contactos con resumen
-  - [ ] Gráfico de frecuencia
-  - [ ] Exportable a Markdown/CSV
+### 2.3 Output & Visualización
+- [X] **Dashboard Visual**: Tarjetas de contactos, resumen de vínculo y cronología
+- [X] **Exportación**: Descarga directa de reportes estructurados en Markdown
 
 ---
 
-## 🛠️ Herramienta Unificada
+## 🛠️ Herramienta Unificada - ✅ Completado
 
 ### 3.1 `ai services` Command
-- [ ] **CLI wrapper** (`ai-services.py`)
-  - [ ] `ai services document-editor` → Iniciar web app
-  - [ ] `ai services whatsapp-analyzer` → Iniciar analizador
-  - [ ] `ai services llm-server` → Verificar estado del modelo
-  - [ ] `ai services status` → Estado global del sistema
-  
-- [ ] **Configuración unificada**
-  - [ ] Punto único para `.env`
-  - [ ] Logs centralizados
-  - [ ] Actualizaciones del modelo
+- [X] **CLI Orchestrator**:
+  - `ai services` (o `ai services start`) → Inicia Backend (:3094) y Frontend (:5173)
+  - `ai services stop` → Detiene todos los servicios
+  - `ai services restart` → Reinicia los servicios
+  - `ai services status` → Estado global del Backend, Frontend y LLM
+  - `ai services web` → Abre la interfaz en el navegador
+- [X] **Configuración unificada**:
+  - `start-all.sh` dinámico sin rutas hardcodeadas
+  - `master.py` para gestión de procesos desde Python
 
-### 3.2 Arquitectura
+---
+
+## 📊 Arquitectura del Sistema
 ```
-┌─────────────────────────────────────┐
-│      ai-services.py (CLI)          │
-└──────────────┬──────────────────────┘
-               │
-    ┌──────────┴──────────┐
-    │                     │
-┌───▼─────┐          ┌─────▼────────┐
-│ Doc.   │          │  WhatsApp   │
-│ Editor │          │  Analyzer   │
-│ Stream │          │  CLI/Web    │
-└────────┘          └─────────────┘
-         │
-         ▼
-┌─────────────────────────────────────┐
-│      llama.cpp (Qwen3.5-9B)        │
-│      + FastAPI Server               │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   ai services / master.py                   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+            ┌──────────────────┴──────────────────┐
+            │                                     │
+   ┌────────▼─────────┐                  ┌────────▼─────────┐
+   │  Frontend (Vite) │                  │ Backend (FastAPI)│
+   │   :5173 (React)  │◄── REST / JSON ──┤      :3094       │
+   └──────────────────┘                  └────────┬─────────┘
+                                                  │
+                                                  ▼
+                                 ┌──────────────────────────────────┐
+                                 │ llama-server (Qwen / ROCm) :1234 │
+                                 └──────────────────────────────────┘
 ```
-
----
-
-## 📊 Cronograma Estimado
-
-| Fase | Duración | Entregables |
-|------|----------|-------------|
-| **Fase 1** | 2-3 semanas | Web app con PDF/Word, chat básico |
-| **Fase 2a** | 1-2 semanas | WhatsApp export + parsing |
-| **Fase 2b** | 1-2 semanas | Extractor de datos + notas |
-| **Fase 3** | 1 semana | `ai services` CLI unificado |
-
----
-
-## 🔌 AI CLI - Características Adicionales
-
-### 4.1 AI CLI Features
-- [X] **show recents** - Mostrar últimas consultas de la base de datos
-- [X] **real-time savings** - Mostrar ahorro acumulado en tiempo real
-- [X] **websocket streaming** - soportar streaming de tokens desde llama-server
-
----
-
-## 📦 Dependencias Principales
-
-```bash
-# Backend
-fastapi, uvicorn, pydantic
-
-# Documentos
-pdfplumber, python-docx, pymupdf (PyMuPDF)
-
-# WhatsApp
-wa2json, wa2txt (o scripts personalizados)
-
-# Datos
-pandas, sqlalchemy (para guardar notas)
-
-# Frontend (opcional)
-streamlit, o React + Vite
-
-# Local LLM
-llama-cpp-python, transformers
-```
-
----
-
-## 🚀 Próximos Pasos Inmediatos
-
-1. **Configurar FastAPI backend** con llama.cpp
-2. **Probar PDF parsing** básico
-3. **Crear Streamlit UI** minimalista
-4. **Verificar `ai services` command** funciona
-
-¿Deseas que empecemos con alguna fase en particular?

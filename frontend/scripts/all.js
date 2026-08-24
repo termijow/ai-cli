@@ -1,58 +1,25 @@
 #!/usr/bin/env node
 /**
- * Start all services (backend + frontend)
+ * Start all services (Backend + Frontend)
  */
-
-const { spawn } = require('child_process');
-const path = require('path');
-const { fileURLToPath } = require('url');
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '../..');
 
-console.log('\n🚀 Starting AI-CLI Services...\n');
+const startScript = path.join(projectRoot, 'start-all.sh');
 
-// Start backend server
-console.log('📦 Starting Backend Server...');
-const backend = spawn(
-  'bash',
-  ['start-all.sh'],
-  {
-    cwd: '/home/termihoe/Documents/ai-cli',
-    stdio: ['inherit', 'inherit', 'inherit']
-  }
-);
+console.log('🚀 Launching AI-CLI Services from project root...');
 
-backend.on('error', (err) => {
-  console.error('Failed to start backend:', err);
+const child = spawn('bash', [startScript], {
+  cwd: projectRoot,
+  stdio: 'inherit'
+});
+
+child.on('error', (err) => {
+  console.error('Failed to run start-all.sh:', err);
   process.exit(1);
 });
-
-backend.on('close', (code) => {
-  if (code !== 0) {
-    console.error('Backend server failed to start');
-    process.exit(code);
-  }
-});
-
-// Start frontend server (in background)
-console.log('🎨 Starting Frontend Server...');
-const frontend = spawn(
-  process.argv[1],
-  ['--mode', 'development', '--port', process.env.PORT || '5173'],
-  {
-    cwd: '/home/termihoe/Documents/ai-cli/frontend',
-    stdio: ['inherit', 'inherit', 'inherit']
-  }
-);
-
-frontend.on('error', (err) => {
-  console.error('Failed to start frontend:', err);
-  process.exit(1);
-});
-
-console.log('\n✅ All services started successfully!\n');
-console.log('Services:');
-console.log('  - Backend Server: http://localhost:3094');
-console.log('  - Frontend Server: http://localhost:5173\n');
-console.log('Press Ctrl+C to stop all services.');
