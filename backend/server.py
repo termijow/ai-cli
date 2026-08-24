@@ -28,8 +28,8 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from backend.document_parser import DocumentParser, parser
-from backend.whatsapp_parser import WhatsAppParser, whatsapp_parser
+from document_parser import DocumentParser, parser
+from whatsapp_parser import WhatsAppParser, whatsapp_parser
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -46,7 +46,7 @@ except ImportError:
 # Configuration from environment / .env
 LLAMA_PORT = int(os.environ.get("LLAMA_PORT", os.environ.get("PORT", 1234)))
 LLAMA_HOST = os.environ.get("LLAMA_HOST", "127.0.0.1")
-LLAMA_URL = f"http://{LLAMA_HOST}:{LLAMA_PORT}"
+LLAMA_URL = os.environ.get("LLAMA_URL", f"http://{LLAMA_HOST}:{LLAMA_PORT}").rstrip("/")
 LLAMA_TIMEOUT = int(os.environ.get("LLAMA_TIMEOUT", 600))  # Default: 10 minutes (600s)
 
 # Uploads directory
@@ -699,7 +699,7 @@ async def analyze_whatsapp_stream_endpoint(request: WhatsAppAnalyzeRequest):
     if not request.chat_text.strip():
         raise HTTPException(status_code=400, detail="El texto del chat de WhatsApp está vacío.")
 
-    from backend.whatsapp_analyzer_engine import LargeChatAnalyzer
+    from whatsapp_analyzer_engine import LargeChatAnalyzer
     engine = LargeChatAnalyzer(chunk_size_messages=150)
 
     def query_fn(prompt: str):
@@ -721,7 +721,7 @@ async def analyze_whatsapp_stream_endpoint(request: WhatsAppAnalyzeRequest):
 @app.get("/whatsapp/dossiers", tags=["WhatsApp"])
 async def list_whatsapp_dossiers():
     """List all saved dossiers and profiles in ~/.ai_cli_whatsapp."""
-    from backend.whatsapp_analyzer_engine import STORAGE_DIR
+    from whatsapp_analyzer_engine import STORAGE_DIR
     dossiers = []
     if STORAGE_DIR.exists():
         for f in STORAGE_DIR.glob("*_dossier.md"):
@@ -741,7 +741,7 @@ async def list_whatsapp_dossiers():
 @app.get("/whatsapp/dossiers/{filename}", tags=["WhatsApp"])
 async def get_whatsapp_dossier_content(filename: str):
     """Get the markdown content of a saved dossier."""
-    from backend.whatsapp_analyzer_engine import STORAGE_DIR
+    from whatsapp_analyzer_engine import STORAGE_DIR
     safe_name = Path(filename).name
     file_path = STORAGE_DIR / safe_name
     if not file_path.exists():
@@ -759,8 +759,8 @@ async def get_whatsapp_dossier_content(filename: str):
 @app.post("/whatsapp/export-obsidian", tags=["WhatsApp", "Obsidian"])
 async def export_to_obsidian_vault(request: Optional[ObsidianExportRequest] = None):
     """Export parsed WhatsApp profiles and dossiers into an Obsidian Vault CRM."""
-    from backend.obsidian_vault_exporter import ObsidianVaultExporter
-    from backend.whatsapp_analyzer_engine import STORAGE_DIR
+    from obsidian_vault_exporter import ObsidianVaultExporter
+    from whatsapp_analyzer_engine import STORAGE_DIR
 
     custom_vault = Path(request.vault_path) if request and request.vault_path else None
     exporter = ObsidianVaultExporter(vault_path=custom_vault)
@@ -796,7 +796,7 @@ async def export_to_obsidian_vault(request: Optional[ObsidianExportRequest] = No
 @app.get("/whatsapp/obsidian-status", tags=["WhatsApp", "Obsidian"])
 async def get_obsidian_status():
     """Get status of the WhatsApp Obsidian Vault."""
-    from backend.obsidian_vault_exporter import vault_exporter
+    from obsidian_vault_exporter import vault_exporter
     return vault_exporter.get_status()
 
 
