@@ -4,5 +4,5 @@
   "type": "md",
   "content": "# Informe Ejecutivo sobre la Implementación de Inteligencia Artificial Local\n\n## 1. Introducción y Definición\n### 1.1. Concepto y Alcance\nLa inteligencia artificial local se refiere al despliegue de modelos de aprendizaje automático y redes neuronales en dispositivos físicos dentro de una organización o infraestructura privada, sin depender de servidores centralizados en la nube.\n\n## 2. Beneficios Estratégicos\n- **Privacidad y Seguridad:** Todos los datos se procesan localmente sin salir de la infraestructura.\n- **Optimización de Costos:** Se eliminan tarifas recurrentes por token o suscripción.\n\n| Factor | Solución Local | Solución Nube |\n| :--- | :--- | :--- |\n| Privacidad | Totalmente aislada | Servidores de terceros |\n| Latencia | Inmediata (ROCm) | Dependiente de conexión |",
   "chatHistory": [],
-  "updated_at": "2026-08-24T16:23:42.050Z"
+  "updated_at": "2026-08-24T16:33:42.048Z"
 }
