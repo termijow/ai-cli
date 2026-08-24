@@ -25,7 +25,11 @@ import {
   Trash2,
   FolderGit2,
   CheckCircle2,
-  RotateCcw
+  RotateCcw,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Folder
 } from 'lucide-react';
 import MarkdownView from './MarkdownView';
 
@@ -273,6 +277,12 @@ Se recomienda proceder con la instalación de la suite local para el análisis d
   const [lastSavedTime, setLastSavedTime] = useState(null);
   const [savingStatus, setSavingStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
 
+  // Sidebar state
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [renamingDocId, setRenamingDocId] = useState(null);
+  const [renameText, setRenameText] = useState('');
+
   // Text selection states
   const [selectedText, setSelectedText] = useState('');
   const [targetSelection, setTargetSelection] = useState(null); // The exact text snippet sent to AI
@@ -385,18 +395,45 @@ Se recomienda proceder con la instalación de la suite local para el análisis d
   };
 
   const handleCloseDocument = async (id, e) => {
-    e.stopPropagation();
-    if (documents.length <= 1) return;
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const docToDelete = documents.find(d => d.id === id);
+    const title = docToDelete?.title || id;
+
+    if (!window.confirm(`¿Deseas eliminar "${title}" del espacio de trabajo y del disco?`)) {
+      return;
+    }
+
     const nextDocs = documents.filter(d => d.id !== id);
+    if (nextDocs.length === 0) {
+      const fallbackDoc = {
+        id: Date.now().toString(),
+        title: 'Documento_1.docx',
+        type: 'docx',
+        content: '# Nuevo Documento\n\n## 1. Introducción\nEscribe aquí tu contenido...',
+        chatHistory: []
+      };
+      nextDocs.push(fallbackDoc);
+    }
+
     setDocuments(nextDocs);
     localStorage.setItem('ai_cli_documents', JSON.stringify(nextDocs));
 
     if (activeDocId === id) {
       setActiveDocId(nextDocs[0].id);
+      localStorage.setItem('ai_cli_active_doc_id', nextDocs[0].id);
     }
 
     try {
+      const cleanStem = docToDelete?.title ? docToDelete.title.replace(/\.[^/.]+$/, '') : id;
       await fetch(`http://localhost:3094/documents/workspace/${id}`, { method: 'DELETE' });
+      if (cleanStem !== id) {
+        await fetch(`http://localhost:3094/documents/workspace/${cleanStem}`, { method: 'DELETE' });
+      }
+      setStatusMessage(`✓ Documento "${title}" eliminado.`);
+      setTimeout(() => setStatusMessage(''), 2500);
     } catch (err) {
       console.warn('Error deleting document from workspace:', err);
     }
@@ -409,6 +446,31 @@ Se recomienda proceder con la instalación de la suite local para el análisis d
       persistActiveDoc({ ...activeDoc, chatHistory: [] });
       setStatusMessage('✓ Historial de chat vaciado.');
       setTimeout(() => setStatusMessage(''), 2000);
+    }
+  };
+
+  const handleStartRename = (doc, e) => {
+    if (e) e.stopPropagation();
+    setRenamingDocId(doc.id);
+    setRenameText(doc.title);
+  };
+
+  const handleFinishRename = async (docId) => {
+    if (!renameText.trim()) {
+      setRenamingDocId(null);
+      return;
+    }
+    const cleanTitle = renameText.trim().endsWith('.docx') || renameText.trim().endsWith('.md')
+      ? renameText.trim()
+      : `${renameText.trim()}.docx`;
+
+    const updated = documents.map(d => d.id === docId ? { ...d, title: cleanTitle } : d);
+    setDocuments(updated);
+    setRenamingDocId(null);
+
+    const doc = updated.find(d => d.id === docId);
+    if (doc) {
+      persistActiveDoc(doc);
     }
   };
 
@@ -801,183 +863,417 @@ Se recomienda proceder con la instalación de la suite local para el análisis d
         </div>
       )}
 
-      {/* Top Document Tabs & Toolbar */}
+      {/* 3-Column Layout: Left Aside (Documents Selector) + Center (Word Canvas/Editor) + Right (AI Copilot) */}
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        backgroundColor: 'var(--bg-secondary)',
-        padding: '8px 16px',
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid var(--border-subtle)',
-        gap: '12px',
-        flexWrap: 'wrap'
+        display: 'grid',
+        gridTemplateColumns: isSidebarCollapsed ? '52px minmax(0, 1.45fr) minmax(370px, 1fr)' : '260px minmax(0, 1.45fr) minmax(370px, 1fr)',
+        gap: '16px',
+        alignItems: 'start',
+        transition: 'all 0.2s ease'
       }}>
-        {/* Document Tab Bar */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', overflowX: 'auto', flex: 1 }}>
-          {documents.map(doc => {
-            const isActive = doc.id === activeDocId;
-            return (
-              <div
-                key={doc.id}
-                onClick={() => setActiveDocId(doc.id)}
+
+        {/* Left Column: Document Selector Aside */}
+        <aside
+          className="glass-panel"
+          style={{
+            padding: isSidebarCollapsed ? '12px 6px' : '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            height: '760px',
+            position: 'sticky',
+            top: '75px',
+            boxSizing: 'border-box'
+          }}
+        >
+          {/* Header */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
+            borderBottom: '1px solid var(--border-subtle)',
+            paddingBottom: '10px'
+          }}>
+            {!isSidebarCollapsed && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                <FolderGit2 size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                  Documentos
+                </h3>
+                <span className="badge" style={{ fontSize: '10px', padding: '1px 6px', backgroundColor: 'var(--bg-tertiary)' }}>
+                  {documents.length}
+                </span>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                onClick={handleCreateDocument}
+                title="Crear nuevo documento"
+                className="btn-secondary"
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '6px 12px',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: isActive ? 'var(--bg-tertiary)' : 'transparent',
-                  border: isActive ? '1px solid var(--border-card)' : '1px solid transparent',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: isActive ? '600' : '400',
-                  color: isActive ? '#10b981' : 'var(--text-secondary)',
-                  transition: 'all 0.15s ease'
+                  padding: isSidebarCollapsed ? '6px' : '4px 8px',
+                  fontSize: '11px',
+                  color: '#10b981',
+                  borderColor: 'rgba(16, 185, 129, 0.3)'
                 }}
               >
-                <FileText size={14} style={{ color: isActive ? '#10b981' : 'var(--text-muted)' }} />
-                <span>{doc.title}</span>
-                {documents.length > 1 && (
-                  <button
-                    onClick={(e) => handleCloseDocument(doc.id, e)}
-                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: '2px' }}
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-            );
-          })}
+                <Plus size={13} />
+                {!isSidebarCollapsed && <span>Nuevo</span>}
+              </button>
 
-          <button
-            onClick={handleCreateDocument}
-            title="Crear nuevo documento"
-            className="btn-secondary"
-            style={{ padding: '6px 10px', fontSize: '12px' }}
-          >
-            <Plus size={13} />
-            <span>Nuevo</span>
-          </button>
-        </div>
+              <button
+                onClick={() => setIsSidebarCollapsed(prev => !prev)}
+                title={isSidebarCollapsed ? 'Expandir selector de documentos' : 'Colapsar selector'}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  padding: '4px'
+                }}
+              >
+                {isSidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+              </button>
+            </div>
+          </div>
 
-        {/* Toolbar Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Git Auto-save Indicator */}
-          <div
-            style={{
+          {/* Search bar (when not collapsed and > 2 documents) */}
+          {!isSidebarCollapsed && documents.length > 2 && (
+            <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              backgroundColor: 'rgba(16, 185, 129, 0.09)',
-              border: '1px solid rgba(16, 185, 129, 0.25)',
-              padding: '4px 9px',
+              backgroundColor: 'var(--bg-input)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-sm)',
-              fontSize: '11px',
-              color: '#10b981',
-              fontWeight: '500'
-            }}
-            title="Se guarda automáticamente cada 10s en la carpeta /documents de tu proyecto para que puedas hacer git commit / git push."
-          >
-            <FolderGit2 size={13} style={{ color: '#10b981' }} />
-            <span>
-              {savingStatus === 'saving'
-                ? 'Guardando en documents/...'
-                : (lastSavedTime ? `Autoguardado: ${lastSavedTime} (documents/)` : 'Autoguardado cada 10s')}
-            </span>
-          </div>
-
-          {statusMessage && (
-            <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600' }}>
-              {statusMessage}
-            </span>
+              padding: '5px 8px'
+            }}>
+              <Search size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+              <input
+                type="text"
+                placeholder="Buscar documento..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  outline: 'none',
+                  color: 'var(--text-primary)',
+                  fontSize: '12px',
+                  width: '100%'
+                }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
           )}
 
-          {/* View Mode Toggle */}
-          <div style={{ display: 'flex', backgroundColor: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: '2px', border: '1px solid var(--border-subtle)' }}>
-            <button
-              onClick={() => setViewMode('word')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
-                backgroundColor: viewMode === 'word' ? '#10b981' : 'transparent',
-                color: viewMode === 'word' ? '#fff' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <Eye size={13} />
-              <span>Hoja Word / PDF</span>
-            </button>
-            <button
-              onClick={() => setViewMode('editor')}
-              style={{
-                padding: '5px 10px',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
-                backgroundColor: viewMode === 'editor' ? '#10b981' : 'transparent',
-                color: viewMode === 'editor' ? '#fff' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <Edit3 size={13} />
-              <span>Editar Texto</span>
-            </button>
+          {/* Document Cards List */}
+          <div style={{
+            flex: 1,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            paddingRight: '2px'
+          }}>
+            {documents
+              .filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase()))
+              .map(doc => {
+                const isActive = doc.id === activeDocId;
+                const isRenaming = renamingDocId === doc.id;
+                const wordCount = doc.content ? doc.content.trim().split(/\s+/).filter(Boolean).length : 0;
+
+                if (isSidebarCollapsed) {
+                  return (
+                    <button
+                      key={doc.id}
+                      onClick={() => setActiveDocId(doc.id)}
+                      title={`${doc.title} (${wordCount} palabras)`}
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        margin: '0 auto',
+                        borderRadius: 'var(--radius-md)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: isActive ? '1px solid #10b981' : '1px solid transparent',
+                        backgroundColor: isActive ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-tertiary)',
+                        color: isActive ? '#10b981' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        position: 'relative'
+                      }}
+                    >
+                      <FileText size={16} />
+                      {isActive && (
+                        <span style={{ position: 'absolute', bottom: '3px', right: '3px', width: '6px', height: '6px', backgroundColor: '#10b981', borderRadius: '50%' }} />
+                      )}
+                    </button>
+                  );
+                }
+
+                return (
+                  <div
+                    key={doc.id}
+                    onClick={() => setActiveDocId(doc.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 10px',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: isActive ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-tertiary)',
+                      border: isActive ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      gap: '8px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1 }}>
+                      <FileText size={15} style={{ color: isActive ? '#10b981' : 'var(--text-muted)', flexShrink: 0 }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1 }}>
+                        {isRenaming ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={renameText}
+                            onChange={(e) => setRenameText(e.target.value)}
+                            onBlur={() => handleFinishRename(doc.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleFinishRename(doc.id);
+                              if (e.key === 'Escape') setRenamingDocId(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              backgroundColor: 'var(--bg-input)',
+                              color: 'var(--text-primary)',
+                              border: '1px solid #10b981',
+                              borderRadius: '3px',
+                              padding: '2px 4px',
+                              fontSize: '12px',
+                              width: '100%',
+                              outline: 'none'
+                            }}
+                          />
+                        ) : (
+                          <span
+                            onDoubleClick={(e) => handleStartRename(doc, e)}
+                            title="Doble clic para renombrar"
+                            style={{
+                              fontSize: '12.5px',
+                              fontWeight: isActive ? '600' : '400',
+                              color: isActive ? '#10b981' : 'var(--text-primary)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}
+                          >
+                            {doc.title}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                          {wordCount} palabras
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      {!isRenaming && (
+                        <button
+                          onClick={(e) => handleStartRename(doc, e)}
+                          title="Renombrar documento"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            opacity: 0.6
+                          }}
+                        >
+                          <Edit3 size={11} />
+                        </button>
+                      )}
+
+                      {documents.length > 1 && (
+                        <button
+                          onClick={(e) => handleCloseDocument(doc.id, e)}
+                          title="Eliminar documento"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            opacity: 0.6
+                          }}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
 
-          {/* Insert Page Break */}
-          <button onClick={handleInsertPageBreak} className="btn-secondary" title="Insertar Salto de Página (---)" style={{ fontSize: '12px', padding: '6px 10px' }}>
-            <SplitSquareVertical size={13} style={{ color: '#f59e0b' }} />
-            <span>Salto de Página</span>
-          </button>
+          {/* Footer of Aside */}
+          {!isSidebarCollapsed && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              borderTop: '1px solid var(--border-subtle)',
+              paddingTop: '10px'
+            }}>
+              {/* Import button */}
+              <label
+                className="btn-secondary"
+                style={{
+                  width: '100%',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  padding: '6px 10px',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <Upload size={13} style={{ color: '#10b981' }} />
+                <span>Importar Archivo</span>
+                <input type="file" accept=".docx,.pdf,.md,.txt" onChange={handleFileUpload} style={{ display: 'none' }} />
+              </label>
 
-          {/* Import File */}
-          <label className="btn-secondary" style={{ cursor: 'pointer', fontSize: '12px', padding: '6px 10px' }}>
-            <Upload size={13} style={{ color: '#10b981' }} />
-            <span>Importar</span>
-            <input type="file" accept=".docx,.pdf,.md,.txt" onChange={handleFileUpload} style={{ display: 'none' }} />
-          </label>
+              {/* Git Auto-save info */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '11px',
+                color: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                padding: '5px 8px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid rgba(16, 185, 129, 0.2)'
+              }} title="Guardado automático cada 10s en la carpeta documents/ de tu repositorio local.">
+                <CheckCircle2 size={12} style={{ flexShrink: 0 }} />
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {savingStatus === 'saving' ? 'Guardando...' : (lastSavedTime ? `Guardado: ${lastSavedTime}` : 'documents/ (Git)')}
+                </span>
+              </div>
+            </div>
+          )}
+        </aside>
 
-          {/* Export Word (.docx) */}
-          <button onClick={handleExportDocx} className="btn-secondary" title="Exportar a Word con formato APA 7" style={{ fontSize: '12px', padding: '6px 10px' }}>
-            <FileDown size={13} style={{ color: '#2563eb' }} />
-            <span>Word (.docx)</span>
-          </button>
+        {/* Center Column: Word Canvas / Textarea Editor */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Main Top Toolbar */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            backgroundColor: 'var(--bg-secondary)',
+            padding: '8px 16px',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-subtle)',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            {/* Active Doc Title Banner */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FileText size={15} style={{ color: '#10b981' }} />
+              <span style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                {activeDoc.title}
+              </span>
+            </div>
 
-          {/* Export PDF (.pdf) */}
-          <button onClick={handleExportPdf} className="btn-secondary" title="Exportar a PDF con formato APA 7" style={{ fontSize: '12px', padding: '6px 10px' }}>
-            <FileText size={13} style={{ color: '#ef4444' }} />
-            <span>PDF (.pdf)</span>
-          </button>
+            {/* Toolbar Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {statusMessage && (
+                <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '600' }}>
+                  {statusMessage}
+                </span>
+              )}
 
-          {/* Export Markdown */}
-          <button onClick={() => handleExportText('md')} className="btn-secondary" title="Exportar a Markdown" style={{ fontSize: '12px', padding: '6px 10px' }}>
-            <Download size={13} />
-            <span>MD</span>
-          </button>
-        </div>
-      </div>
+              {/* View Mode Toggle */}
+              <div style={{ display: 'flex', backgroundColor: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: '2px', border: '1px solid var(--border-subtle)' }}>
+                <button
+                  onClick={() => setViewMode('word')}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: 'none',
+                    backgroundColor: viewMode === 'word' ? '#10b981' : 'transparent',
+                    color: viewMode === 'word' ? '#fff' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Eye size={13} />
+                  <span>Hoja Word / PDF</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('editor')}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: 'none',
+                    backgroundColor: viewMode === 'editor' ? '#10b981' : 'transparent',
+                    color: viewMode === 'editor' ? '#fff' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Edit3 size={13} />
+                  <span>Editar Texto</span>
+                </button>
+              </div>
 
-      {/* Main Split Layout: Word Canvas (Left) + AI Copilot (Right) */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1.45fr) minmax(380px, 1fr)',
-        gap: '20px',
-        alignItems: 'start'
-      }}>
-        
-        {/* Left Column: Word / PDF Page Sheet */}
-        <div>
+              {/* Insert Page Break */}
+              <button onClick={handleInsertPageBreak} className="btn-secondary" title="Insertar Salto de Página (---)" style={{ fontSize: '12px', padding: '6px 10px' }}>
+                <SplitSquareVertical size={13} style={{ color: '#f59e0b' }} />
+                <span>Salto de Página</span>
+              </button>
+
+              {/* Export Word (.docx) */}
+              <button onClick={handleExportDocx} className="btn-secondary" title="Exportar a Word con formato APA 7" style={{ fontSize: '12px', padding: '6px 10px' }}>
+                <FileDown size={13} style={{ color: '#2563eb' }} />
+                <span>Word (.docx)</span>
+              </button>
+
+              {/* Export PDF (.pdf) */}
+              <button onClick={handleExportPdf} className="btn-secondary" title="Exportar a PDF con formato APA 7" style={{ fontSize: '12px', padding: '6px 10px' }}>
+                <FileText size={13} style={{ color: '#ef4444' }} />
+                <span>PDF (.pdf)</span>
+              </button>
+
+              {/* Export Markdown */}
+              <button onClick={() => handleExportText('md')} className="btn-secondary" title="Exportar a Markdown" style={{ fontSize: '12px', padding: '6px 10px' }}>
+                <Download size={13} />
+                <span>MD</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Word / PDF Canvas or Direct Textarea */}
           {viewMode === 'word' ? (
             /* True A4 Word Sheet Container (No extra headers/banners) */
             <div

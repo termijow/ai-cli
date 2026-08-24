@@ -1489,22 +1489,44 @@ async def save_workspace_document(doc: SaveDocumentRequest):
 @app.delete("/documents/workspace/{doc_id}", tags=["Documents", "Persistence"])
 @app.delete("/api/documents/{doc_id}", tags=["Documents", "Persistence"])
 async def delete_workspace_document(doc_id: str):
-    """Delete a workspace document and its chat history from disk."""
+    """Delete a workspace document and all its associated files (.md, .json, .docx, .pdf) from disk."""
     try:
+        deleted_files = []
+        clean_names_to_delete = {doc_id}
+
+        # 1. Inspect JSON file if present to get original title / clean name
         json_path = DOCUMENTS_DIR / f"{doc_id}.json"
         if json_path.exists():
-            # Read title to delete matching .md
             try:
                 with open(json_path, "r", encoding="utf-8") as f:
                     doc_data = json.load(f)
-                    clean_name = re.sub(r'[^\w\s-]', '', Path(doc_data.get("title", "doc")).stem).strip().replace(' ', '_')
-                    md_path = DOCUMENTS_DIR / f"{clean_name}.md"
-                    if md_path.exists():
-                        md_path.unlink()
-            except Exception:
-                pass
-            json_path.unlink()
-        return {"status": "success", "id": doc_id, "message": "Documento eliminado de disco"}
+                    if isinstance(doc_data, dict) and "title" in doc_data:
+                        raw_stem = Path(doc_data["title"]).stem
+                        c_name = re.sub(r'[^\w\s-]', '', raw_stem).strip().replace(' ', '_')
+                        if c_name:
+                            clean_names_to_delete.add(c_name)
+                        clean_names_to_delete.add(raw_stem)
+            except Exception as e:
+                logger.warning(f"Error reading {json_path} during delete: {e}")
+
+        # 2. Iterate and delete any file in DOCUMENTS_DIR that matches any stem or filename
+        if DOCUMENTS_DIR.exists():
+            for f in list(DOCUMENTS_DIR.iterdir()):
+                if f.is_file():
+                    if f.stem in clean_names_to_delete or f.name in clean_names_to_delete:
+                        try:
+                            f.unlink()
+                            deleted_files.append(f.name)
+                            logger.info(f"Deleted file from workspace: {f.name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete {f.name}: {e}")
+
+        return {
+            "status": "success",
+            "id": doc_id,
+            "deleted_files": deleted_files,
+            "message": f"Documento y archivos ({', '.join(deleted_files) if deleted_files else doc_id}) eliminados de disco."
+        }
     except Exception as e:
         logger.error(f"Error deleting document {doc_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error al eliminar documento: {str(e)}")
