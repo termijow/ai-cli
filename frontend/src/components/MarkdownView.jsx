@@ -6,18 +6,27 @@ import { ChevronDown, ChevronRight, Brain, Copy, Check } from 'lucide-react';
 export function parseThinking(text) {
   if (!text) return { thinking: null, content: '' };
 
-  const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/);
-  if (thinkMatch) {
-    const thinking = thinkMatch[1].trim();
-    const content = text.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+  // 1. Handle Gemma channel thought format: <|channel>thought ... <channel|>
+  const gemmaMatch = text.match(/<\|channel\>thought\s*([\s\S]*?)<channel\|>/i);
+  if (gemmaMatch) {
+    const thinking = gemmaMatch[1].trim();
+    const content = text.replace(/<\|channel\>thought\s*[\s\S]*?<channel\|>/i, '').trim();
     return { thinking, content };
   }
 
-  // Handle open-ended or unmatched <think>
+  // 2. Handle standard <think> ... </think> tags
+  const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/i);
+  if (thinkMatch) {
+    const thinking = thinkMatch[1].trim();
+    const content = text.replace(/<think>[\s\S]*?<\/think>/i, '').trim();
+    return { thinking, content };
+  }
+
+  // 3. Handle open-ended or unmatched <think>
   if (text.startsWith('<think>')) {
-    const parts = text.split('</think>');
+    const parts = text.split(/<\/think>/i);
     if (parts.length > 1) {
-      return { thinking: parts[0].replace('<think>', '').trim(), content: parts.slice(1).join('</think>').trim() };
+      return { thinking: parts[0].replace(/<think>/i, '').trim(), content: parts.slice(1).join('</think>').trim() };
     }
   }
 

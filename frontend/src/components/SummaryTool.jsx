@@ -98,6 +98,32 @@ function SummaryTool() {
     }
   };
 
+  const handleExportPdf = async () => {
+    if (!result) return;
+    try {
+      const res = await fetch('http://localhost:3094/documents/pdf/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Resumen Ejecutivo AI-CLI',
+          content: result
+        })
+      });
+
+      if (!res.ok) throw new Error('Error al generar PDF');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Resumen_Ejecutivo.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+
   const wordCount = inputText.trim() ? inputText.trim().split(/\s+/).length : 0;
 
   return (
@@ -261,7 +287,16 @@ function SummaryTool() {
               className="btn-secondary"
             >
               <FileDown size={14} style={{ color: '#2563eb' }} />
-              <span>Descargar Word</span>
+              <span>Word (.docx)</span>
+            </button>
+
+            <button
+              onClick={handleExportPdf}
+              disabled={!result}
+              className="btn-secondary"
+            >
+              <FileText size={14} style={{ color: '#ef4444' }} />
+              <span>PDF (.pdf)</span>
             </button>
           </div>
         </div>

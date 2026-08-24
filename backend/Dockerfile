@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir \
     markdown>=3.5.0 \
     requests>=2.31.0 \
     httpx>=0.27.0 \
-    python-multipart>=0.0.9
+    python-multipart>=0.0.9 \
+    "reportlab>=4.0.0"
 
 COPY . .
 

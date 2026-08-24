@@ -9,6 +9,8 @@ services:
       - LLAMA_URL=http://host.docker.internal:1234
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - ./documents:/app/documents
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3094/health')"]
       interval: 10s
