@@ -28,19 +28,18 @@ fi
 echo ""
 
 if [[ -f "$DbFile" ]]; then
-    echo -e "${BLUE}📊 Últimas consultas (${DB_FILE}):${NC}"
-    sqlite3 -separator " | " "$DbFile" "
+    echo -e "${BLUE}📊 Última consulta registrada:${NC}"
+    sqlite3 -separator "|" "$DbFile" "
     SELECT 
-        strftime('%Y-%m-%d %H:%M:%S', created_at) || ' | ' ||
-        COALESCE(input_tokens, 0) || 'k tokens in | ' ||
-        COALESCE(output_tokens, 0) || 'k tokens out | ' ||
-        COALESCE(input_cost, 0) || ' USD | ' ||
-        COALESCE(output_savings, 0) || ' USD | ' ||
-        COALESCE(total_savings, 0) || ' USD TOTAL'
+        strftime('%Y-%m-%d %H:%M:%S', created_at),
+        COALESCE(input_tokens, 0),
+        COALESCE(output_tokens, 0),
+        ROUND(COALESCE(input_cost, 0) + COALESCE(output_savings, 0), 4),
+        COALESCE(total_savings, 0)
     FROM usage_logs
     ORDER BY rowid DESC
-    LIMIT 1;" | while IFS=' | ' read -r date tokens_in tokens_out cost_in savings total; do
-        [[ -n "$date" ]] && echo -e "${GREEN}  $date - \$${total} USD${NC}"
+    LIMIT 1;" | while IFS='|' read -r dt in_t out_t ses_save tot_s; do
+        [[ -n "$dt" ]] && echo -e "${GREEN}  $dt — $in_t in / $out_t out | Ahorro sesión: \$${ses_save} USD | Total: \$${tot_s} USD${NC}"
     done
 else
     echo -e "${YELLOW}⚠️  No se encontró base de datos: $DbFile${NC}"

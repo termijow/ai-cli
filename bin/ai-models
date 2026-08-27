@@ -60,6 +60,21 @@ get_model_recommendations() {
     local rec_desc=""
     local fit_status=""
     
+    # Detección específica para modelos MoE Qwen 35B A3B (40 capas totales, 3B activos, SSM)
+    if [[ "$model" =~ 35B-A3B|[Aa]3[Bb] ]]; then
+        if [[ "$model" =~ IQ2_XXS|iq2_xxs ]]; then
+            rec_layers=28
+            fit_status="🟡 MoE Híbrido GPU+RAM (~6.8GB VRAM + ~3.4GB RAM)"
+            rec_desc="MoE 35B/3B activo. 40k contexto soportado por arquitectura SSM (~13 tok/s)."
+        else
+            rec_layers=21
+            fit_status="🟡 MoE Híbrido GPU+RAM (~6.6GB VRAM + ~6.5GB RAM)"
+            rec_desc="MoE 35B/3B activo con precisión IQ3_S. 40k contexto soportado (~8-10 tok/s)."
+        fi
+        echo "$size_gb|$rec_layers|$fit_status|$rec_desc"
+        return 0
+    fi
+
     # Comparación con awk puro (sin bc)
     local tier
     tier=$(awk -v gb="$size_gb" 'BEGIN {
@@ -220,17 +235,40 @@ CURRENT_CTX=$(grep "^AI_CTX_SIZE=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr
 CURRENT_CTX=${DEFAULT_CTX:-${CURRENT_CTX:-4096}}
 
 # Contexto máximo seguro según tamaño del modelo (con KV cache q4_0)
-CTX_TIER=$(awk -v gb="$REC_SIZE" 'BEGIN {
-    if      (gb+0 <= 7.0)  print "small"   # 9B y menores → 40k OK
-    else if (gb+0 <= 11.0) print "medium"  # 27B → máx ~16k seguro
-    else                   print "large"   # 35B+ → máx 8k seguro
-}')
+if [[ "$SELECTED_MODEL" =~ 35B-A3B|[Aa]3[Bb] ]]; then
+    CTX_TIER="moe_a3b"
+else
+    CTX_TIER=$(awk -v gb="$REC_SIZE" 'BEGIN {
+        if      (gb+0 <= 7.0)  print "small"   # 9B y menores → 40k OK
+        else if (gb+0 <= 11.0) print "medium"  # 27B → máx ~16k seguro
+        else                   print "large"   # 35B+ → máx 8k seguro
+    }')
+fi
 
 echo -e "\n${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
 echo -e "${BLUE}│${NC} ${YELLOW}📏 TAMAÑO DE CONTEXTO (tokens)${NC}                        ${BLUE}│${NC}"
 echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${NC}"
 
 case "$CTX_TIER" in
+    moe_a3b)
+        echo -e "${BLUE}│${NC}  ${BOLD}1)${NC}  4,096  — Ligero, respuestas cortas                     ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}2)${NC}  8,192  — Estándar                                      ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}3)${NC} 16,384  — Grande                                        ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}4)${NC} 32,768  — Muy grande                                    ${NC}"
+        echo -e "${BLUE}│${NC}  ${BOLD}5)${NC} 40,960  — Máximo recomendado para 35B A3B SSM ✅        ${NC}"
+        echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+        echo -e "  Actual: ${GREEN}${CURRENT_CTX}${NC} tokens\n"
+        read -p "Elige [1-5] o escribe valor custom (Enter = mantener ${CURRENT_CTX}): " ctx_opt
+        case "$ctx_opt" in
+            1) NEW_CTX=4096   ;;
+            2) NEW_CTX=8192   ;;
+            3) NEW_CTX=16384  ;;
+            4) NEW_CTX=32768  ;;
+            5) NEW_CTX=40960  ;;
+            "") NEW_CTX=$CURRENT_CTX ;;
+            *) NEW_CTX=$ctx_opt ;;
+        esac
+        ;;
     small)
         echo -e "${BLUE}│${NC}  ${BOLD}1)${NC}  4,096  — Ligero, respuestas cortas                     ${NC}"
         echo -e "${BLUE}│${NC}  ${BOLD}2)${NC}  8,192  — Estándar, archivos medianos                   ${NC}"
@@ -366,7 +404,12 @@ fi
 # Guardar automáticamente la configuración como preset en presets/
 if command -v save_model_preset &>/dev/null; then
     # Ajuste dinámico de KV Cache y batch según tamaño
-    if (( $(echo "$REC_SIZE <= 7.0" | awk '{print ($1)?1:0}') )); then
+    if [[ "$SELECTED_MODEL" =~ 35B-A3B|[Aa]3[Bb] ]]; then
+        KV_CACHE="q4_0"
+        BATCH=2048
+        UBATCH=512
+        EST_SPEED="12-15 tok/s"
+    elif (( $(echo "$REC_SIZE <= 7.0" | awk '{print ($1)?1:0}') )); then
         KV_CACHE="f16"
         BATCH=2048
         UBATCH=512

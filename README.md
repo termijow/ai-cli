@@ -97,7 +97,7 @@ Cada modelo cuenta con su propio archivo `.conf` en la carpeta `presets/`:
 | **Qwen3.5-4B** | Velocidad Máxima | 99 (100% VRAM) | 16,384 | `off` | **60-80 tok/s** 🚀 |
 | **Qwen3.5-9B** | Equilibrado Coding | 99 (100% VRAM) | 16,384 | `high` | **35-45 tok/s** ⚡ |
 | **Qwen3.8-27B** | Híbrido Inteligente | 35 capas | 8,192 | `low` | **18-25 tok/s** |
-| **Qwen3.6-35B** | Modo Seguro MoE | 25 capas | 4,096 | `low` | **12-18 tok/s** |
+| **Qwen3.6-35B-A3B** | MoE Híbrido SSM | 28 capas | 40,960 | `high` | **12-15 tok/s** 🧠 |
 | **Gemma 4B / 2B**| Fluido 100% VRAM | 99 capas | 8,192 | `off` | **50-100 tok/s** |
 
 Puedes editar cualquier preset desde el menú `ai-models` seleccionando **"Personalizar parámetros y GUARDAR"**.

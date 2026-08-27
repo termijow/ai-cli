@@ -1,94 +1,88 @@
 #!/bin/bash
 
-# Registrar uso de AI-CLI
+# Registrar y consultar estadísticas de uso de AI-CLI
+export LC_NUMERIC=C
+
 USAGE_SCRIPT="$0"
 SCRIPT_DIR="$(dirname "$USAGE_SCRIPT")"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-source "$PROJECT_ROOT/.env"
+[[ -f "$PROJECT_ROOT/.env" ]] && source "$PROJECT_ROOT/.env"
 
-# Función para registrar uso
+DB_FILE="$HOME/.ai_cli_db.db"
+
+# Precios de referencia: Claude Fable 5 ($10/1M input, $50/1M output)
+# Input: $0.0000100 / token
+# Output: $0.0000500 / token
+
 register_usage() {
-    local input_tokens="$1"
-    local output_tokens="$2"
+    local input_tokens="${1:-0}"
+    local output_tokens="${2:-0}"
     
-    if [[ -z "$input_tokens" ]]; then
-        input_tokens=0
-    fi
+    local input_cost_usd=$(awk -v t="$input_tokens" 'BEGIN {printf "%.4f", t * 0.0000100}')
+    local output_savings_usd=$(awk -v t="$output_tokens" 'BEGIN {printf "%.4f", t * 0.0000500}')
+    local total_savings_usd=$(awk -v in_c="$input_cost_usd" -v out_s="$output_savings_usd" 'BEGIN {printf "%.4f", in_c + out_s}')
     
-    if [[ -z "$output_tokens" ]]; then
-        output_tokens=0
-    fi
+    # Obtener acumulado previo
+    local current_total=$(sqlite3 "$DB_FILE" "SELECT COALESCE(MAX(total_savings), 0) FROM usage_logs;" 2>/dev/null || echo 0)
+    local new_accumulated=$(awk -v cur="$current_total" -v cur_save="$total_savings_usd" 'BEGIN {printf "%.2f", cur + cur_save}')
+
+    # Insertar en BD
+    sqlite3 "$DB_FILE" "INSERT INTO usage_logs (input_tokens, output_tokens, input_cost, output_savings, total_savings)
+        VALUES ($input_tokens, $output_tokens, $input_cost_usd, $output_savings_usd, $new_accumulated);" 2>/dev/null || true
     
-    # Calcular costos (precio por 1M tokens = $5 input, $25 output | COP 3500)
-    local input_cost_usd=$(echo "scale=4; $input_tokens / 1000000 * 5" | bc)
-    local output_savings_usd=$(echo "scale=4; $output_tokens / 1000000 * 25" | bc)
-    local input_cost_cop=$(echo "scale=2; $input_cost_usd * 3500" | bc)
-    local output_savings_cop=$(echo "scale=2; $output_savings_usd * 3500" | bc)
-    local total_savings_cop=$(echo "scale=2; $input_cost_cop - $output_savings_cop" | bc)
-    
-    # Insertar en BD (valores en COP)
-    sqlite3 "$HOME/.ai_cli_db.db" <<EOF
-INSERT INTO usage_logs (input_tokens, output_tokens, input_cost, output_savings, total_savings)
-VALUES ($input_tokens, $output_tokens, $input_cost_cop, $output_savings_cop, $total_savings_cop);
-EOF
-    
-    echo "✅ Registro guardado:"
-    echo "   Input: $input_tokens tokens | Output: $output_tokens tokens"
-    echo "   Input Cost: COP$$input_cost | Output Savings: COP$$output_savings"
-    echo "   Total Ahorrado: COP$$total_savings"
+    echo "✅ Registro guardado (precios Claude Fable 5):"
+    echo "   Input: $input_tokens tokens (\$$input_cost_usd USD) | Output: $output_tokens tokens (\$$output_savings_usd USD)"
+    echo "   Ahorro en esta consulta: \$$total_savings_usd USD | Acumulado: \$$new_accumulated USD"
 }
 
-# Función para mostrar estadísticas
 show_stats() {
-    echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
-    echo -e "\033[0;32m│\033[0m \033[1;36m📊 MÉTRICAS HISTÓRICAS TOTALS\033[0m                \033[0m"
-    echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
+    echo -e "\n\033[0;32m╭───────────────────────────────────────────────────────────╮\033[0m"
+    echo -e "\033[0;32m│\033[0m \033[1;36m📊 MÉTRICAS HISTÓRICAS TOTALES (Claude Fable 5)\033[0m            \033[0;32m│\033[0m"
+    echo -e "\033[0;32m├───────────────────────────────────────────────────────────┤\033[0m"
     
-    local total_input_tokens=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(input_tokens), 0) FROM usage_logs;")
-    local total_output_tokens=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(output_tokens), 0) FROM usage_logs;")
-    local total_input_cost=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(input_cost), 0) FROM usage_logs;")
-    local total_output_savings=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(output_savings), 0) FROM usage_logs;")
-    local total_savings=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(total_savings), 0) FROM usage_logs;")
+    local total_input_tokens=$(sqlite3 "$DB_FILE" "SELECT COALESCE(SUM(input_tokens), 0) FROM usage_logs;" 2>/dev/null || echo 0)
+    local total_output_tokens=$(sqlite3 "$DB_FILE" "SELECT COALESCE(SUM(output_tokens), 0) FROM usage_logs;" 2>/dev/null || echo 0)
+    local total_input_cost=$(sqlite3 "$DB_FILE" "SELECT COALESCE(SUM(input_cost), 0) FROM usage_logs;" 2>/dev/null || echo 0)
+    local total_output_savings=$(sqlite3 "$DB_FILE" "SELECT COALESCE(SUM(output_savings), 0) FROM usage_logs;" 2>/dev/null || echo 0)
+    local savings_file="$HOME/.ai_cli_savings"
+    local total_savings="0.00"
+    if [[ -f "$savings_file" ]]; then
+        total_savings=$(cat "$savings_file" 2>/dev/null || echo "0.00")
+    else
+        total_savings=$(sqlite3 "$DB_FILE" "SELECT COALESCE(SUM(input_cost + output_savings), 0) FROM usage_logs;" 2>/dev/null || echo "0.00")
+    fi
     
-    echo -e "\033[0;32m│\033[0m \033[1;33mTokens Input Totales:\033[0m \033[1;33m%8s\033[0m       \033[0;32m│\033[0m" "$total_input_tokens"
-    echo -e "\033[0;32m│\033[0m \033[1;33mTokens Output Totales:\033[0m \033[1;33m%8s\033[0m       \033[0;32m│\033[0m" "$total_output_tokens"
-    echo -e "\033[0;32m│\033[0m \033[1;33mGasto Input Total:\033[0m \033[1;33m%.2f COP\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' "$total_input_cost")"
-    echo -e "\033[0;32m│\033[0m \033[1;33mAhorro Output Total:\033[0m \033[1;33m%.2f COP\033[0m      \033[0;32m│\033[0m" "$(printf '%.2f' "$total_output_savings")"
-    echo -e "\033[0;32m│\033[0m \033[1;32m💰 TOTAL AHORRADO:\033[0m \033[1;32m%.2f COP\033[0m       \033[0;32m│\033[0m" "$(printf '%.2f' "$total_savings")"
-    echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
+    printf "\033[0;32m│\033[0m \033[1;33mTokens Input Totales:\033[0m   \033[1;32m%12s tokens\033[0m                  \033[0;32m│\033[0m\n" "$total_input_tokens"
+    printf "\033[0;32m│\033[0m \033[1;33mTokens Output Totales:\033[0m  \033[1;32m%12s tokens\033[0m                  \033[0;32m│\033[0m\n" "$total_output_tokens"
+    printf "\033[0;32m│\033[0m \033[1;33mValor Input Fable 5:\033[0m    \033[1;32m%12.4f USD\033[0m                     \033[0;32m│\033[0m\n" "$total_input_cost"
+    printf "\033[0;32m│\033[0m \033[1;33mValor Output Fable 5:\033[0m   \033[1;32m%12.4f USD\033[0m                     \033[0;32m│\033[0m\n" "$total_output_savings"
+    printf "\033[0;32m│\033[0m \033[1;32m💰 TOTAL AHORRADO:\033[0m      \033[1;32m%12.2f USD\033[0m                     \033[0;32m│\033[0m\n" "$total_savings"
+    echo -e "\033[0;32m╰───────────────────────────────────────────────────────────╯\033[0m"
     
-    echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
-    echo -e "\033[0;32m│\033[0m \033[1;36m📈 MÉTRICAS POR MES\033[0m                           \033[0;32m│\033[0m"
-    echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
+    echo -e "\n\033[0;32m╭───────────────────────────────────────────────────────────╮\033[0m"
+    echo -e "\033[0;32m│\033[0m \033[1;36m📈 ACTIVIDAD POR MES (Últimos 6 meses)\033[0m                    \033[0;32m│\033[0m"
+    echo -e "\033[0;32m├───────────────────────────────────────────────────────────┤\033[0m"
     
-    # Últimos 6 meses
-    local current_month=$(date +%Y-%m)
-    for month in $(seq -g 6 1); do
-        local month_name=$(date -d "$current_month-$month" +%B 2>/dev/null || date -j -f "%Y-%m-$month" "+%B" 2>/dev/null || echo "$current_month-$month")
-        local input_tokens=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(input_tokens), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$current_month-$month';")
-        local output_tokens=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(output_tokens), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$current_month-$month';")
-        local input_cost=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(input_cost), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$current_month-$month';")
-        local output_savings=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(output_savings), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$current_month-$month';")
-        local total_savings=$(sqlite3 "$HOME/.ai_cli_db.db" "SELECT COALESCE(SUM(total_savings), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$current_month-$month';")
-        
-        echo -e "\033[0;32m│\033[0m \033[1;33m$month. $month_name:\033[0m \033[1;33m$%-8s tokens\033[0m       \033[0;32m│\033[0m" "$((input_tokens + output_tokens))"
+    for i in 0 1 2 3 4 5; do
+        local month_key=$(date -d "$i months ago" +%Y-%m 2>/dev/null || date +%Y-%m)
+        local month_name=$(date -d "$i months ago" +"%b %Y" 2>/dev/null || echo "$month_key")
+        local in_tok=$(sqlite3 "$DB_FILE" "SELECT COALESCE(SUM(input_tokens), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$month_key';" 2>/dev/null || echo 0)
+        local out_tok=$(sqlite3 "$DB_FILE" "SELECT COALESCE(SUM(output_tokens), 0) FROM usage_logs WHERE strftime('%Y-%m', created_at) = '$month_key';" 2>/dev/null || echo 0)
+        local tot_tok=$((in_tok + out_tok))
+        printf "\033[0;32m│\033[0m  • %-12s:  \033[1;33m%10s tokens\033[0m                            \033[0;32m│\033[0m\n" "$month_name" "$tot_tok"
     done
     
-    echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
+    echo -e "\033[0;32m╰───────────────────────────────────────────────────────────╯\033[0m\n"
 }
 
-# Función para mostrar registros recientes - llama a script separado para evitar conflictos de variables
 show_recent() {
     "$PROJECT_ROOT/bin/show_recent.sh"
 }
 
 case "$1" in
     log)
-        # Obtener tokens de argumentos o valores predeterminados
-        input_tokens="${2:-0}"
-        output_tokens="${3:-0}"
-        register_usage "$input_tokens" "$output_tokens"
+        register_usage "${2:-0}" "${3:-0}"
         ;;
     stats)
         show_stats
@@ -99,7 +93,7 @@ case "$1" in
     *)
         echo "Uso:"
         echo "  ai log <input_tokens> <output_tokens>  - Registrar uso"
-        echo "  ai stats                                - Ver métricas históricas"
-        echo "  ai recent                               - Ver registros recientes"
+        echo "  ai stats                               - Ver métricas históricas"
+        echo "  ai recent                              - Ver registros recientes"
         ;;
 esac

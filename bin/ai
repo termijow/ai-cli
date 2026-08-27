@@ -85,7 +85,96 @@ show_status() {
             echo -e "\033[0;34m│\033[0m 🎮 VRAM GPU (RX 6600):  \033[1;33m${u_gb} GB / ${t_gb} GB\033[0m"
         fi
     fi
+    local total_savings="0.00"
+    [[ -f "$HOME/.ai_cli_savings" ]] && total_savings=$(cat "$HOME/.ai_cli_savings" 2>/dev/null || echo "0.00")
+    echo -e "\033[0;34m│\033[0m 💸 Ahorro vs Fable 5:  \033[1;32m\$${total_savings} USD\033[0m"
     echo -e "\033[0;34m╰───────────────────────────────────────────────────╯\033[0m\n"
+}
+
+show_savings() {
+    local savings_file="$HOME/.ai_cli_savings"
+    local db_file="$HOME/.ai_cli_db.db"
+    local total_savings="0.00"
+    if [[ -f "$savings_file" ]]; then
+        total_savings=$(cat "$savings_file" 2>/dev/null || echo "0.00")
+    fi
+
+    # Contador total histórico de tokens ("desde siempre")
+    local total_in=0
+    local total_out=0
+    local total_tokens=0
+
+    if [[ -f "$db_file" ]]; then
+        total_in=$(sqlite3 "$db_file" "SELECT COALESCE(SUM(input_tokens), 0) FROM usage_logs;" 2>/dev/null || echo 0)
+        total_out=$(sqlite3 "$db_file" "SELECT COALESCE(SUM(output_tokens), 0) FROM usage_logs;" 2>/dev/null || echo 0)
+        total_tokens=$((total_in + total_out))
+    fi
+
+    # Fallback al historial JSONL si la BD estuviera vacía
+    if [[ "$total_tokens" -eq 0 && -f "$HOME/.ai_cli_history/queries.jsonl" ]]; then
+        total_in=$(jq -s '[.[].prompt_tokens // 0] | add // 0' "$HOME/.ai_cli_history/queries.jsonl" 2>/dev/null || echo 0)
+        total_out=$(jq -s '[.[].completion_tokens // 0] | add // 0' "$HOME/.ai_cli_history/queries.jsonl" 2>/dev/null || echo 0)
+        total_tokens=$((total_in + total_out))
+    fi
+
+    # Formateo con separador de miles (ej: 12,537)
+    local fmt_total=$(echo "$total_tokens" | sed ':a;s/\B[0-9]\{3\}\>/,&/;ta')
+    local fmt_in=$(echo "$total_in" | sed ':a;s/\B[0-9]\{3\}\>/,&/;ta')
+    local fmt_out=$(echo "$total_out" | sed ':a;s/\B[0-9]\{3\}\>/,&/;ta')
+
+    # Función auxiliar para alinear bordes de cajas ASCII dinámicamente
+    _pad_card_line() {
+        local text="$1"
+        local has_emoji="${2:-0}"
+        local plain=$(echo -e "$text" | sed "s/\x1b\[[0-9;]*m//g")
+        local len=${#plain}
+        [[ "$has_emoji" -eq 1 ]] && len=$((len + 1))
+        local pad=$((57 - len))
+        [[ $pad -lt 0 ]] && pad=0
+        local spaces=$(printf "%*s" "$pad" "")
+        printf "\033[0;32m│\033[0m %b%s \033[0;32m│\033[0m\n" "$text" "$spaces"
+    }
+
+    # UI Principal - Alcancía y Tokens de por vida
+    echo -e "\n\033[0;32m╭───────────────────────────────────────────────────────────╮\033[0m"
+    _pad_card_line "💸 \033[1;36mMI ALCANCÍA DE IA LOCAL (Histórico Total)\033[0m" 1
+    echo -e "\033[0;32m├───────────────────────────────────────────────────────────┤\033[0m"
+    _pad_card_line "💰 \033[1;33mAhorro Total Acumulado:\033[0m   \033[1;32m\$${total_savings} USD\033[0m" 1
+    _pad_card_line "📊 \033[1;33mTokens Procesados:\033[0m       \033[1;36m${fmt_total} tokens\033[0m" 1
+    _pad_card_line "   ├─ Input (Prompt):       \033[0;37m${fmt_in} tokens\033[0m" 0
+    _pad_card_line "   └─ Output (Generación):  \033[0;37m${fmt_out} tokens\033[0m" 0
+    echo -e "\033[0;32m╰───────────────────────────────────────────────────────────╯\033[0m"
+
+    # Mostrar precio por token (Claude Fable 5)
+    echo -e "\n\033[0;32m╭───────────────────────────────────────────────────────────╮\033[0m"
+    _pad_card_line "📊 \033[1;36mTASA DE AHORRO (simulada Claude Fable 5)\033[0m" 1
+    echo -e "\033[0;32m├───────────────────────────────────────────────────────────┤\033[0m"
+    _pad_card_line "💰 Input (Prompt):  \033[0;32m\$10.00 / 1M tokens (\$0.000010/tok)\033[0m" 1
+    _pad_card_line "💰 Output (Gener.): \033[0;32m\$50.00 / 1M tokens (\$0.000050/tok)\033[0m" 1
+    echo -e "\033[0;32m╰───────────────────────────────────────────────────────────╯\033[0m"
+
+    # Historial de consultas
+    echo -e "\n\033[0;32m╭─────────────────────────────────────────────────────────────────────────╮\033[0m"
+    echo -e "\033[0;32m│\033[0m \033[1;36m📜 HISTORIAL RECIENTE (Últimas consultas)\033[0m                               \033[0;32m│\033[0m"
+    echo -e "\033[0;32m├─────────────────────────────────────────────────────────────────────────┤\033[0m"
+    local history_file="$HOME/.ai_cli_history/queries.jsonl"
+    if [[ -f "$history_file" && -s "$history_file" ]]; then
+        local count=1
+        while IFS= read -r json_line; do
+            [[ -z "$json_line" ]] && continue
+            local ts=$(echo "$json_line" | jq -r '.timestamp // "N/A"' 2>/dev/null)
+            local qt=$(echo "$json_line" | jq -r '.query_type // "chat"' 2>/dev/null)
+            local sv=$(echo "$json_line" | jq -r '.savings // 0' 2>/dev/null)
+            local pt=$(echo "$json_line" | jq -r '.prompt_tokens // 0' 2>/dev/null)
+            local ct=$(echo "$json_line" | jq -r '.completion_tokens // 0' 2>/dev/null)
+            printf "\033[0;32m│\033[0m \033[1;33m%d.\033[0m %-19s | %-5s | %5s in / %5s out | \033[0;32m+\$%-7s USD\033[0m \033[0;32m│\033[0m\n" \
+                "$count" "$ts" "$qt" "$pt" "$ct" "$sv"
+            ((count++))
+        done < <(tail -n 5 "$history_file")
+    else
+        echo -e "\033[0;32m│\033[0m \033[1;31mNo hay historial de consultas aún\033[0m                                       \033[0;32m│\033[0m"
+    fi
+    echo -e "\033[0;32m╰─────────────────────────────────────────────────────────────────────────╯\033[0m\n"
 }
 
 # Si se llama sin argumentos, abrir el menú interactivo principal
@@ -247,50 +336,7 @@ case "$1" in
         fi
         ;;
     savings)
-        SAVINGS_FILE="$HOME/.ai_cli_savings"
-        if [[ -f "$SAVINGS_FILE" ]]; then
-            TOTAL_SAVINGS=$(cat "$SAVINGS_FILE")
-        else
-            TOTAL_SAVINGS="0.00"
-        fi
-        
-        # UI Principal
-        echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
-        echo -e "\033[0;32m│\033[0m \033[1;36m💸 MI ALCANCÍA DE IA LOCAL\033[0m                \033[0;32m│\033[0m"
-        echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
-        printf "\033[0;32m│\033[0m \033[1;33mAhorro Total Acumulado:\033[0m \033[1;33m$%-6s USD\033[0m       \033[0;32m│\033[0m\n" "$TOTAL_SAVINGS"
-        echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
-
-        # Mostrar precio por token
-        echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
-        echo -e "\033[0;32m│\033[0m \033[1;36m📊 TASA DE AHORRO (simulada Opus)\033[0m           \033[0;32m│\033[0m"
-        echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
-        echo -e "\033[0;32m│\033[0m 💰 Input (Prompt):  \033[0;32m\$5.00 / 1M tokens\033[0m         \033[0;32m│\033[0m"
-        echo -e "\033[0;32m│\033[0m 💰 Output:          \033[0;32m\$25.00 / 1M tokens\033[0m        \033[0;32m│\033[0m"
-        echo -e "\033[0;32m╰───────────────────────────────────────────────────╯\033[0m"
-
-        # Historial de consultas
-        echo -e "\n\033[0;32m╭───────────────────────────────────────────────────╮\033[0m"
-        echo -e "\033[0;32m│\033[0m \033[1;36m📜 HISTORIAL RECIENTE\033[0m                              \033[0;32m│\033[0m"
-        echo -e "\033[0;32m├───────────────────────────────────────────────────┤\033[0m"
-        local history_file="$HOME/.ai_cli_history/queries.jsonl"
-        if [[ -f "$history_file" && -s "$history_file" ]]; then
-            local count=1
-            while IFS= read -r json_line; do
-                [[ -z "$json_line" ]] && continue
-                local ts=$(echo "$json_line" | jq -r '.timestamp // "N/A"' 2>/dev/null)
-                local qt=$(echo "$json_line" | jq -r '.query_type // "chat"' 2>/dev/null)
-                local sv=$(echo "$json_line" | jq -r '.savings // 0' 2>/dev/null)
-                local pt=$(echo "$json_line" | jq -r '.prompt_tokens // 0' 2>/dev/null)
-                local ct=$(echo "$json_line" | jq -r '.completion_tokens // 0' 2>/dev/null)
-                printf "\033[0;32m│\033[0m \033[1;33m%d.\033[0m %-19s | %-7s | %4s in / %4s out | \033[0;32m+$%-6s USD\033[0m \033[0;32m│\033[0m\n" \
-                    "$count" "$ts" "$qt" "$pt" "$ct" "$sv"
-                ((count++))
-            done < <(tail -n 5 "$history_file" | tac 2>/dev/null || tail -n 5 "$history_file")
-        else
-            echo -e "\033[0;32m│\033[0m \033[1;31mNo hay historial de consultas aún\033[0m                        \033[0;32m│\033[0m"
-        fi
-        echo -e "\033[0;32m╰───────────────────────────────────────────────────────────╯\033[0m"
+        show_savings
         ;;
     *)
         # Ejecutar el núcleo de AI-CLI

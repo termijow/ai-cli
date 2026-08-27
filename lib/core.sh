@@ -96,19 +96,19 @@ call_llm_robust() {
     content=$(jq -r '.choices[0].message.content // empty' "$tmp_res" 2>/dev/null)
 
     # Sistema de registro de ahorro económico
-    # Pricing actual: Gemini - input $0.0000050/t, output $0.0000100/t
-    # Precio Opus referencia: input $5/1M tokens, output $25/1M tokens
+    # Pricing de referencia: Claude Fable 5 (Input: $10/1M tokens [$0.0000100], Output: $50/1M tokens [$0.0000500])
     local prompt_tokens=$(jq -r '.usage.prompt_tokens // 0' "$tmp_res" 2>/dev/null)
     local completion_tokens=$(jq -r '.usage.completion_tokens // 0' "$tmp_res" 2>/dev/null)
 
-    local total_saving
-    total_saving=$(awk "BEGIN {printf \"%.4f\", ($prompt_tokens * 0.0000050) + ($completion_tokens * 0.0000100)}")
+    local prompt_cost=$(awk "BEGIN {printf \"%.4f\", $prompt_tokens * 0.0000100}")
+    local output_cost=$(awk "BEGIN {printf \"%.4f\", $completion_tokens * 0.0000500}")
+    local total_saving=$(awk "BEGIN {printf \"%.4f\", ($prompt_tokens * 0.0000100) + ($completion_tokens * 0.0000500)}")
     
     local savings_file="$HOME/.ai_cli_savings"
     if [[ ! -f "$savings_file" ]]; then
-        echo "0" > "$savings_file"
+        echo "0.00" > "$savings_file"
     fi
-    local current_savings=$(cat "$savings_file")
+    local current_savings=$(cat "$savings_file" 2>/dev/null || echo "0.00")
     local new_savings
     new_savings=$(awk "BEGIN {printf \"%.2f\", $current_savings + $total_saving}")
     echo "$new_savings" > "$savings_file"
@@ -118,14 +118,16 @@ call_llm_robust() {
     if [[ -n "$db_file" && -f "$db_file" ]]; then
         # Insertar registro de uso en la base de datos
         sqlite3 "$db_file" "INSERT INTO usage_logs (input_tokens, output_tokens, input_cost, output_savings, total_savings) 
-            VALUES ($prompt_tokens, $completion_tokens, $total_saving, $total_saving, $new_savings);"
+            VALUES ($prompt_tokens, $completion_tokens, $prompt_cost, $output_cost, $new_savings);" 2>/dev/null || true
     fi
 
-    echo -e "\033[0;32m💸 Ahorro en esta consulta: \$${total_saving} USD | Total acumulado: \$${new_savings} USD\033[0m" >&2
+    echo -e "\033[0;32m💸 Ahorro vs Claude Fable 5 en esta consulta: \$${total_saving} USD | Total acumulado: \$${new_savings} USD\033[0m" >&2
 
     # --- Historial de consultas ---
     local history_dir="$HOME/.ai_cli_history"
     local history_file="$history_dir/queries.jsonl"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local query_type="${query_type:-code}"
     
     # Crear directorio de historial si no existe
     mkdir -p "$history_dir"
@@ -134,7 +136,7 @@ call_llm_robust() {
     local json_entry
     json_entry=$(jq -nc \
         --arg ts "$timestamp" \
-        --arg qt "${query_type:-chat}" \
+        --arg qt "$query_type" \
         --argjson pt "$prompt_tokens" \
         --argjson ct "$completion_tokens" \
         --argjson sv "$total_saving" \
@@ -142,7 +144,7 @@ call_llm_robust() {
         '{"timestamp":$ts, "query_type":$qt, "prompt_tokens":$pt, "completion_tokens":$ct, "savings":$sv, "total_savings":$tsv}' 2>/dev/null)
     
     if [[ -z "$json_entry" ]]; then
-        json_entry="{\"timestamp\":\"$timestamp\",\"query_type\":\"${query_type:-chat}\",\"prompt_tokens\":$prompt_tokens,\"completion_tokens\":$completion_tokens,\"savings\":$total_saving,\"total_savings\":$new_savings}"
+        json_entry="{\"timestamp\":\"$timestamp\",\"query_type\":\"$query_type\",\"prompt_tokens\":$prompt_tokens,\"completion_tokens\":$completion_tokens,\"savings\":$total_saving,\"total_savings\":$new_savings}"
     fi
     echo "$json_entry" >> "$history_file"
 

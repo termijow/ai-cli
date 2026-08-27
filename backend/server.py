@@ -9,6 +9,8 @@ import io
 import os
 import sys
 import json
+import sqlite3
+from datetime import datetime
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
@@ -138,6 +140,50 @@ app.add_middleware(
 
 # --- LLM Helper Functions ---
 
+def record_savings(prompt_tokens: int, completion_tokens: int, query_type: str = "web_chat"):
+    """Record token usage and savings vs Claude Fable 5 to SQLite and ~/.ai_cli_savings."""
+    if prompt_tokens <= 0 and completion_tokens <= 0:
+        return
+    try:
+        # Precios Claude Fable 5: $10/1M input ($0.0000100), $50/1M output ($0.0000500)
+        input_cost = prompt_tokens * 0.0000100
+        output_cost = completion_tokens * 0.0000500
+        total_saving = round(input_cost + output_cost, 4)
+
+        savings_file = Path.home() / ".ai_cli_savings"
+        current_savings = 0.0
+        if savings_file.exists():
+            try:
+                current_savings = float(savings_file.read_text().strip())
+            except Exception:
+                current_savings = 0.0
+        new_savings = round(current_savings + total_saving, 2)
+        savings_file.write_text(f"{new_savings:.2f}\n")
+
+        db_file = Path.home() / ".ai_cli_db.db"
+        if db_file.exists():
+            with sqlite3.connect(str(db_file)) as conn:
+                conn.execute(
+                    "INSERT INTO usage_logs (input_tokens, output_tokens, input_cost, output_savings, total_savings) VALUES (?, ?, ?, ?, ?)",
+                    (prompt_tokens, completion_tokens, input_cost, output_cost, new_savings)
+                )
+
+        history_dir = Path.home() / ".ai_cli_history"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        history_file = history_dir / "queries.jsonl"
+        entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "query_type": query_type,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "savings": total_saving,
+            "total_savings": new_savings
+        }
+        with open(history_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        logger.warning(f"No se pudo registrar ahorro: {e}")
+
 def query_llama_cpp(
     prompt: str,
     system_prompt: Optional[str] = None,
@@ -171,7 +217,10 @@ def query_llama_cpp(
             data = resp.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             usage = data.get("usage", {})
-            tokens_used = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            tokens_used = prompt_tokens + completion_tokens
+            record_savings(prompt_tokens, completion_tokens, query_type="chat")
             return {"content": content, "tokens_used": tokens_used}
     except Exception as e:
         logger.warning(f"Chat completions failed on {chat_url}: {e}, trying completions fallback...")
@@ -190,7 +239,10 @@ def query_llama_cpp(
             data = resp.json()
             content = data.get("choices", [{}])[0].get("text", "")
             usage = data.get("usage", {})
-            tokens_used = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            tokens_used = prompt_tokens + completion_tokens
+            record_savings(prompt_tokens, completion_tokens, query_type="chat")
             return {"content": content, "tokens_used": tokens_used}
     except Exception as e:
         logger.error(f"Completions fallback failed on {compl_url}: {e}")
@@ -413,10 +465,10 @@ async def chat_endpoint(request: ChatRequest):
     """Chat with the local LLM with full context up to 40k tokens and auto-compaction."""
     ctx = (request.context or request.file or "").strip()
 
-    # Intelligent compaction if context exceeds 120,000 characters (~30k tokens)
-    if len(ctx) > 120000:
-        logger.info(f"Context size ({len(ctx)} chars, ~{len(ctx)//4} tokens) exceeds 30k threshold. Applying auto-compaction.")
-        ctx = ctx[:60000] + "\n\n[... CONTENIDO INTERMEDIO COMPACTADO AUTOMÁTICAMENTE (>30K TOKENS) ...]\n\n" + ctx[-50000:]
+    # Intelligent compaction if context exceeds 160,000 characters (~40k tokens)
+    if len(ctx) > 160000:
+        logger.info(f"Context size ({len(ctx)} chars, ~{len(ctx)//4} tokens) exceeds 40k threshold. Applying auto-compaction.")
+        ctx = ctx[:80000] + "\n\n[... CONTENIDO INTERMEDIO COMPACTADO AUTOMÁTICAMENTE (>40K TOKENS) ...]\n\n" + ctx[-70000:]
 
     if ctx:
         full_prompt = f"=== CONTEXTO DEL DOCUMENTO O SELECCIÓN ===\n{ctx}\n\n=== INSTRUCCIÓN DEL USUARIO ===\n{request.message}"

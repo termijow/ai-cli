@@ -16,13 +16,13 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
-SavingsFile = PROJECT_ROOT / ".ai_cli_savings"
-DbFile = PROJECT_ROOT / ".ai_cli_db.db"
+SavingsFile = Path.home() / ".ai_cli_savings"
+DbFile = Path.home() / ".ai_cli_db.db"
 PORT = int(os.environ.get("WEBSOCKET_PORT", 1235))
 
-# Token pricing (same as core.sh)
-INPUT_PRICE = 0.0000050  # $0.0000050 per input token
-OUTPUT_PRICE = 0.0000100  # $0.0000100 per output token
+# Token pricing (Claude Fable 5: $10/1M input, $50/1M output)
+INPUT_PRICE = 0.0000100  # $0.0000100 per input token
+OUTPUT_PRICE = 0.0000500  # $0.0000500 per output token
 
 
 class SavingsClient:

@@ -5,12 +5,12 @@
 SavingsFile="$HOME/.ai_cli_savings"
 DbFile="$HOME/.ai_cli_db.db"
 
-# Token pricing
-INPUT_PRICE="0.0000050"
-OUTPUT_PRICE="0.0000100"
+# Token pricing (Claude Fable 5: $10/1M in, $50/1M out)
+INPUT_PRICE="0.0000100"
+OUTPUT_PRICE="0.0000500"
 
 echo "Token Counter started. Reading from stdin..."
-echo "Token pricing: Input $INPUT_PRICE USD/token, Output $OUTPUT_PRICE USD/token"
+echo "Token pricing (Claude Fable 5): Input $INPUT_PRICE USD/token, Output $OUTPUT_PRICE USD/token"
 
 # Initialize counters
 input_tokens=0
