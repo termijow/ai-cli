@@ -195,6 +195,41 @@ def trigger_session_sync(contact_name: Optional[str] = None):
             asyncio.run(run_analysis(out_file))
 
 
+def trigger_batch_session_sync(limit: int = 100, scrolls: int = 8, auto_analyze: bool = False):
+    """Launches Playwright WhatsApp Web session to export ALL chats automatically."""
+    from backend.whatsapp_session_exporter import session_exporter
+    print_banner()
+    print("🚀 Abriendo exportador masivo automático de WhatsApp Web...")
+    print(f"Se exportarán hasta {limit} conversaciones automáticamente a la carpeta 'chats/'.")
+    print("Si no has iniciado sesión, se abrirá la ventana para escanear el QR.")
+
+    exported_files = asyncio.run(session_exporter.export_all_chats(limit=limit, max_scrolls_per_chat=scrolls))
+    if exported_files:
+        print(f"\n✅ Se exportaron {len(exported_files)} chats exitosamente.")
+        if auto_analyze:
+            print("\n🧠 Iniciando análisis automático de todos los chats con Qwen 3.6...")
+            for f in exported_files:
+                asyncio.run(run_analysis(f))
+        else:
+            resp = input("\n¿Deseas procesar y analizar todos estos chats con Qwen 3.6 para tu libreta Obsidian CRM? (y/n) [y]: ").strip().lower() or "y"
+            if resp == "y":
+                for f in exported_files:
+                    asyncio.run(run_analysis(f))
+
+
+def run_batch_analysis():
+    """Analyzes all .txt files found in chats/ folder."""
+    candidates = scan_for_chats()
+    if not candidates:
+        print("❌ No se encontraron chats en la carpeta 'chats/' para analizar.")
+        return
+    print_banner()
+    print(f"🧠 Se procesarán {len(candidates)} conversaciones en lote con Qwen 3.6 35B A3B...")
+    for idx, c in enumerate(candidates, 1):
+        print(f"\n[{idx}/{len(candidates)}] Procesando: {c.name}")
+        asyncio.run(run_analysis(c))
+
+
 async def run_analysis(file_path: Path):
     """Run full batched analysis on chat file with progress bar."""
     print_banner()
@@ -316,27 +351,41 @@ def interactive_select():
         print("\n⚠️ No se encontraron archivos de chat automáticamente.")
         print("Puedes sincronizar desde WhatsApp Web o indicar la ruta de un archivo.")
         print("\nOpciones:")
-        print("  1) Sincronizar chat desde WhatsApp Web (Playwright)")
-        print("  2) Escribir ruta manual a un archivo .txt")
+        print("  1) 🚀 Exportar TODOS mis chats automáticamente desde WhatsApp Web (Modo Masivo)")
+        print("  2) Sincronizar chat específico desde WhatsApp Web")
+        print("  3) Escribir ruta manual a un archivo .txt")
         ch = input("\nElige una opción [1]: ").strip() or "1"
         if ch == "1":
-            trigger_session_sync()
+            lim_in = input("¿Cuántos chats deseas exportar como máximo? [100]: ").strip() or "100"
+            limit = int(lim_in) if lim_in.isdigit() else 100
+            trigger_batch_session_sync(limit=limit)
         elif ch == "2":
+            trigger_session_sync()
+        elif ch == "3":
             path_in = input("Introduce la ruta manual al archivo .txt del chat: ").strip()
             if path_in:
                 asyncio.run(run_analysis(Path(path_in).expanduser().resolve()))
         return
 
-    print(f"\nSe encontraron {len(candidates)} conversaciones:")
+    print(f"\nSe encontraron {len(candidates)} conversaciones listas:")
     for idx, c in enumerate(candidates, 1):
         size_kb = c.stat().st_size / 1024
         print(f"  {idx}) {c.name} ({size_kb:.1f} KB) - {c.parent}")
 
-    print("  s) Sincronizar chat desde sesión de WhatsApp Web")
-    print("  0) Escribir ruta manual")
+    print("\nAcciones Rápidas:")
+    print("  a) 🚀 Exportar TODOS mis chats automáticamente desde WhatsApp Web (Modo Masivo)")
+    print("  b) 🧠 Analizar TODOS los chats guardados en lote con Qwen 3.6")
+    print("  s) Sincronizar chat individual desde sesión de WhatsApp Web")
+    print("  0) Escribir ruta manual a un archivo .txt")
 
     choice = input("\nElige una opción [1]: ").strip() or "1"
-    if choice.lower() == "s":
+    if choice.lower() == "a":
+        lim_in = input("¿Cuántos chats deseas exportar como máximo? [100]: ").strip() or "100"
+        limit = int(lim_in) if lim_in.isdigit() else 100
+        trigger_batch_session_sync(limit=limit)
+    elif choice.lower() == "b":
+        run_batch_analysis()
+    elif choice.lower() == "s":
         trigger_session_sync()
     elif choice == "0":
         path_in = input("Introduce la ruta al archivo .txt: ").strip()
@@ -365,6 +414,12 @@ def main():
             list_saved_dossiers()
         elif cmd in ["events", "calendar", "eventos"]:
             list_obsidian_events()
+        elif cmd in ["export-all", "sync-all", "exportall", "syncall"]:
+            limit = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 100
+            auto_analyze = "--analyze" in sys.argv or "-a" in sys.argv
+            trigger_batch_session_sync(limit=limit, auto_analyze=auto_analyze)
+        elif cmd in ["analyze-all", "batch", "batch-analyze"]:
+            run_batch_analysis()
         elif cmd in ["sync", "session", "web"]:
             target = sys.argv[2] if len(sys.argv) > 2 else None
             trigger_session_sync(target)
@@ -383,8 +438,10 @@ def main():
             asyncio.run(run_analysis(Path(cmd).expanduser().resolve()))
         else:
             print(f"Uso:")
-            print(f"  ai whatsapp                       - Menú interactivo")
-            print(f"  ai whatsapp sync [contacto]       - Conectar a WhatsApp Web y exportar chat")
+            print(f"  ai whatsapp                       - Menú interactivo con opciones masivas")
+            print(f"  ai whatsapp export-all [límite]   - Exportar automáticamente TODOS tus chats de WhatsApp")
+            print(f"  ai whatsapp analyze-all           - Procesar todos los chats con Qwen 3.6 -> Obsidian")
+            print(f"  ai whatsapp sync [contacto]       - Conectar a WhatsApp Web y exportar un chat")
             print(f"  ai whatsapp /ruta/chat.txt         - Analizar chat con Qwen 3.6 y guardar en Obsidian")
             print(f"  ai whatsapp calendar              - Ver eventos y enlaces directos a Google Calendar")
             print(f"  ai whatsapp crm                   - Ver contactos en la libreta Obsidian")

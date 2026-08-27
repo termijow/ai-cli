@@ -32,6 +32,10 @@ function WhatsAppAnalyzer() {
   const [selectedDossier, setSelectedDossier] = useState(null);
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState('');
+  const [availableChats, setAvailableChats] = useState([]);
+  const [syncingWeb, setSyncingWeb] = useState(false);
+  const [syncWebMsg, setSyncWebMsg] = useState('');
+  const [batchLimit, setBatchLimit] = useState(100);
 
   const backendUrl = 'http://localhost:3094';
 
@@ -45,9 +49,62 @@ function WhatsAppAnalyzer() {
     } catch (e) {}
   };
 
+  const loadAvailableChats = async () => {
+    try {
+      const res = await fetch(`${backendUrl}/whatsapp/chats`);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableChats(data.chats || []);
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     loadSavedDossiers();
+    loadAvailableChats();
   }, []);
+
+  const handleSelectChatFile = async (filename) => {
+    if (!filename) return;
+    try {
+      setFileName(filename);
+      const res = await fetch(`${backendUrl}/whatsapp/chats/${encodeURIComponent(filename)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setChatText(data.content || '');
+        setStats(null);
+        setAnalysis(null);
+        setError(null);
+        setProgressInfo({ percent: 0, message: `Chat cargado: ${filename}`, currentBatch: 0, totalBatches: 0, dateRange: '', tokens: 0 });
+      }
+    } catch (e) {
+      setError(`Error cargando chat: ${e.message}`);
+    }
+  };
+
+  const handleExportAllFromWeb = async () => {
+    setSyncingWeb(true);
+    setSyncWebMsg('Iniciando navegador Playwright para exportar chats...');
+    try {
+      const res = await fetch(`${backendUrl}/whatsapp/export-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: Number(batchLimit) || 100, scrolls: 8 })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSyncWebMsg(`✓ ${data.message || `Se exportaron ${data.exported_count} chats exitosamente`}`);
+        loadAvailableChats();
+      } else {
+        setSyncWebMsg('⚠️ No se pudo completar la exportación automática.');
+      }
+    } catch (e) {
+      setSyncWebMsg(`Error: ${e.message}`);
+    } finally {
+      setSyncingWeb(false);
+      setTimeout(() => setSyncWebMsg(''), 8000);
+    }
+  };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -300,15 +357,113 @@ function WhatsAppAnalyzer() {
         <>
           {/* Main Upload / Input Card */}
           <div className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            
+            {/* Auto WhatsApp Web Sync Banner */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '14px 18px',
+              backgroundColor: 'rgba(16, 185, 129, 0.07)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid rgba(16, 185, 129, 0.25)',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <label className="btn-secondary" style={{ cursor: 'pointer', backgroundColor: 'var(--bg-tertiary)' }}>
-                  <Upload size={15} style={{ color: '#10b981' }} />
-                  <span>Cargar archivo .txt de WhatsApp</span>
+                <Zap size={22} style={{ color: '#10b981', flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                    Exportador Masivo Automático (WhatsApp Web)
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Lee y exporta automáticamente tus conversaciones de WhatsApp Web sin tener que exportarlas una por una.
+                  </div>
+                  {syncWebMsg && (
+                    <div style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', marginTop: '4px' }}>
+                      {syncWebMsg}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Límite:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={batchLimit}
+                    onChange={(e) => setBatchLimit(e.target.value)}
+                    style={{
+                      width: '60px',
+                      padding: '5px 8px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-subtle)',
+                      backgroundColor: 'var(--bg-input)',
+                      color: 'var(--text-primary)',
+                      fontSize: '12px'
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={handleExportAllFromWeb}
+                  disabled={syncingWeb}
+                  className="btn-primary"
+                  style={{
+                    fontSize: '12px',
+                    padding: '6px 14px',
+                    backgroundColor: '#10b981',
+                    borderColor: '#10b981'
+                  }}
+                >
+                  <Sparkles size={13} />
+                  <span>{syncingWeb ? 'Sincronizando...' : '🚀 Exportar Todos los Chats'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Selector de chats existentes y carga manual */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                {availableChats.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>
+                      📂 Chats Exportados ({availableChats.length}):
+                    </span>
+                    <select
+                      onChange={(e) => handleSelectChatFile(e.target.value)}
+                      value={fileName || ''}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-subtle)',
+                        backgroundColor: 'var(--bg-tertiary)',
+                        color: 'var(--text-primary)',
+                        fontSize: '12px',
+                        outline: 'none',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">-- Seleccionar chat para analizar --</option>
+                      {availableChats.map(c => (
+                        <option key={c.filename} value={c.filename}>
+                          {c.contact} ({c.size_kb} KB)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <label className="btn-secondary" style={{ cursor: 'pointer', backgroundColor: 'var(--bg-tertiary)', fontSize: '12px', padding: '6px 12px' }}>
+                  <Upload size={14} style={{ color: '#10b981' }} />
+                  <span>Subir .txt manual</span>
                   <input type="file" accept=".txt" onChange={handleFileUpload} style={{ display: 'none' }} />
                 </label>
-                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                  {fileName ? `Archivo: ${fileName}` : 'o pega la transcripción en el recuadro'}
+
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  {fileName ? `Chat activo: ${fileName}` : 'o pega el texto abajo'}
                 </span>
               </div>
 

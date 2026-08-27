@@ -852,6 +852,63 @@ async def get_obsidian_status():
     return vault_exporter.get_status()
 
 
+class WhatsAppSyncRequest(BaseModel):
+    limit: Optional[int] = 50
+    scrolls: Optional[int] = 8
+    target_contact: Optional[str] = None
+    auto_analyze: Optional[bool] = False
+
+
+@app.get("/whatsapp/chats", tags=["WhatsApp"])
+async def list_available_chats():
+    """List all exported WhatsApp .txt chat files in chats/ directory."""
+    from backend.whatsapp_session_exporter import CHATS_EXPORT_DIR
+    chats = []
+    if CHATS_EXPORT_DIR.exists():
+        for f in CHATS_EXPORT_DIR.glob("*.txt"):
+            stat = f.stat()
+            contact_name = f.stem.replace("Chat_de_WhatsApp_con_", "").replace("Chat de WhatsApp con ", "").replace("_", " ")
+            chats.append({
+                "filename": f.name,
+                "path": str(f),
+                "contact": contact_name,
+                "size_kb": round(stat.st_size / 1024, 1),
+                "modified": stat.st_mtime
+            })
+    return {"status": "success", "total": len(chats), "chats": sorted(chats, key=lambda x: x["modified"], reverse=True)}
+
+
+@app.get("/whatsapp/chats/{filename}", tags=["WhatsApp"])
+async def get_chat_file_content(filename: str):
+    """Returns the text content of an exported WhatsApp chat file."""
+    from backend.whatsapp_session_exporter import CHATS_EXPORT_DIR
+    safe_name = Path(filename).name
+    file_path = CHATS_EXPORT_DIR / safe_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo de chat no encontrado.")
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        content = file_path.read_text(encoding="latin-1")
+    return {"status": "success", "filename": file_path.name, "content": content}
+
+
+@app.post("/whatsapp/export-all", tags=["WhatsApp"])
+async def export_all_whatsapp_chats(req: Optional[WhatsAppSyncRequest] = None):
+    """Automatically exports all chats from WhatsApp Web session in batch."""
+    from backend.whatsapp_session_exporter import session_exporter
+    limit = req.limit if req and req.limit else 50
+    scrolls = req.scrolls if req and req.scrolls else 8
+
+    exported = await session_exporter.export_all_chats(limit=limit, max_scrolls_per_chat=scrolls)
+    return {
+        "status": "success",
+        "exported_count": len(exported),
+        "exported_files": [str(f.name) for f in exported],
+        "message": f"Se exportaron {len(exported)} chats automáticamente a la carpeta 'chats/'."
+    }
+
+
 @app.get("/documents/list", tags=["Documents"])
 async def list_uploaded_documents():
     """List uploaded and cached documents available for processing."""
