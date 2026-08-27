@@ -427,6 +427,12 @@ def main():
             print("Este modo lee únicamente la conversación que tengas abierta mientras hablas.")
             print("🔒 NUNCA abre ni toca mensajes no leídos de otros chats.")
             asyncio.run(session_exporter.start_live_watcher())
+        elif cmd in ["daemon", "server", "homelab"]:
+            from backend.homelab_daemon import HomelabWhatsAppDaemon
+            print_banner()
+            interval = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 900
+            daemon = HomelabWhatsAppDaemon(check_interval_seconds=interval, headless=True)
+            asyncio.run(daemon.run())
         elif cmd in ["sync", "session", "web"]:
             target = sys.argv[2] if len(sys.argv) > 2 else None
             trigger_session_sync(target)

@@ -1060,6 +1060,90 @@ async def list_uploaded_documents():
     return {"status": "success", "documents": docs}
 
 
+# --- Google Calendar Endpoints ---
+from backend.google_calendar_sync import calendar_sync
+
+class CalendarAuthRequest(BaseModel):
+    code: str
+    redirect_uri: str = "urn:ietf:wg:oauth:2.0:oob"
+
+class CreateCalendarEventRequest(BaseModel):
+    title: str
+    start_time: str
+    end_time: Optional[str] = None
+    location: Optional[str] = ""
+    description: Optional[str] = ""
+    contact_name: Optional[str] = None
+
+@app.get("/calendar/status", tags=["Calendar"])
+async def get_calendar_status():
+    """Returns status of Google Calendar integration."""
+    return calendar_sync.get_status()
+
+@app.get("/calendar/auth-url", tags=["Calendar"])
+async def get_calendar_auth_url(redirect_uri: str = "urn:ietf:wg:oauth:2.0:oob"):
+    """Returns OAuth2 authorization URL for Google Calendar."""
+    url = calendar_sync.get_auth_url(redirect_uri)
+    if not url:
+        raise HTTPException(
+            status_code=400,
+            detail="credentials.json no encontrado. Coloca tus credenciales de Google Cloud en ~/.ai_cli_google/credentials.json o ~/.ai_cli_whatsapp/google_credentials.json"
+        )
+    return {"status": "success", "auth_url": url}
+
+@app.post("/calendar/authorize", tags=["Calendar"])
+async def complete_calendar_auth(req: CalendarAuthRequest):
+    """Exchanges an authorization code for a Google Calendar token."""
+    res = calendar_sync.complete_auth(req.code, req.redirect_uri)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
+
+@app.post("/calendar/create-event", tags=["Calendar"])
+async def create_calendar_event(req: CreateCalendarEventRequest):
+    """Creates an event in Google Calendar and syncs it with Obsidian vault."""
+    res = calendar_sync.create_event(
+        title=req.title,
+        start_dt=req.start_time,
+        end_dt=req.end_time,
+        location=req.location or "",
+        description=req.description or ""
+    )
+
+    if req.contact_name:
+        try:
+            from backend.obsidian_vault_exporter import vault_exporter
+            vault_exporter.export_contact_profile({
+                "participantes": [{"nombre": req.contact_name}],
+                "eventos_y_compromisos": [{
+                    "fecha": req.start_time,
+                    "descripcion": req.title,
+                    "google_calendar_url": res.get("html_link") or res.get("google_calendar_url", "")
+                }]
+            }, contact_filter=req.contact_name)
+        except Exception as e:
+            logger.warning(f"No se pudo anexar evento a la nota de Obsidian: {e}")
+
+    return res
+
+@app.get("/calendar/events", tags=["Calendar"])
+async def get_calendar_upcoming_events(max_results: int = 10):
+    """Returns upcoming Google Calendar events."""
+    return {"status": "success", "events": calendar_sync.list_upcoming_events(max_results)}
+
+# --- Headless WhatsApp QR Code Endpoint ---
+@app.get("/whatsapp/qr", tags=["WhatsApp"])
+async def get_whatsapp_qr_image():
+    """Serves the WhatsApp Web QR code image if waiting for authentication on a headless server."""
+    qr_path = Path.home() / ".ai_cli_whatsapp" / "qr.png"
+    if not qr_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="No hay código QR activo en este momento. La sesión de WhatsApp puede estar ya autenticada."
+        )
+    return FileResponse(qr_path, media_type="image/png")
+
+
 # --- Server Runner ---
 
 def main():

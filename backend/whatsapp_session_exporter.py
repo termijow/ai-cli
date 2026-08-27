@@ -201,12 +201,25 @@ class WhatsAppSessionExporter:
                 qr_selector = "canvas[aria-label='Scan this QR code to link a device'], canvas"
 
                 start_time = time.time()
+                qr_img_path = self.session_dir.parent / "qr.png"
                 while time.time() - start_time < 120:
                     if await page.query_selector(logged_in_selector):
                         print("✅ ¡Sesión de WhatsApp Web activa y autenticada!")
+                        if qr_img_path.exists():
+                            try:
+                                qr_img_path.unlink()
+                            except Exception:
+                                pass
                         break
                     elif await page.query_selector(qr_selector):
-                        print("📸 Por favor, escanea el código QR en la ventana del navegador con tu teléfono...")
+                        try:
+                            qr_el = await page.query_selector(qr_selector)
+                            if qr_el:
+                                qr_img_path.parent.mkdir(parents=True, exist_ok=True)
+                                await qr_el.screenshot(path=str(qr_img_path))
+                        except Exception:
+                            pass
+                        print(f"📸 Escanea el código QR (guardado en {qr_img_path} o http://localhost:3094/whatsapp/qr)...")
                     await asyncio.sleep(2)
                 else:
                     print("⚠️ Tiempo de espera agotado para el escaneo del QR.")
@@ -315,12 +328,25 @@ class WhatsAppSessionExporter:
             qr_selector = "canvas[aria-label='Scan this QR code to link a device'], canvas"
 
             start_time = time.time()
+            qr_img_path = self.session_dir.parent / "qr.png"
             while time.time() - start_time < 120:
                 if await page.query_selector(logged_in_selector):
                     print("✅ ¡Sesión de WhatsApp Web autenticada!")
+                    if qr_img_path.exists():
+                        try:
+                            qr_img_path.unlink()
+                        except Exception:
+                            pass
                     break
                 elif await page.query_selector(qr_selector):
-                    print("📸 Por favor, escanea el código QR en la ventana del navegador con tu teléfono...")
+                    try:
+                        qr_el = await page.query_selector(qr_selector)
+                        if qr_el:
+                            qr_img_path.parent.mkdir(parents=True, exist_ok=True)
+                            await qr_el.screenshot(path=str(qr_img_path))
+                    except Exception:
+                        pass
+                    print(f"📸 Escanea el código QR (guardado en {qr_img_path} o http://localhost:3094/whatsapp/qr)...")
                 await asyncio.sleep(2)
             else:
                 print("⚠️ Tiempo de espera agotado para el escaneo del QR.")

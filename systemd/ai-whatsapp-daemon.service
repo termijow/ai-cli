@@ -1,0 +1,25 @@
+[Unit]
+Description=AI Services - WhatsApp Autonomous Homelab Daemon & Google Calendar Sync
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=termihoe
+Group=termihoe
+WorkingDirectory=/home/termihoe/Documents/ai-cli
+Environment="PATH=/home/termihoe/Documents/ai-cli/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="AI_API_URL=http://127.0.0.1:1234/v1"
+ExecStart=/home/termihoe/Documents/ai-cli/venv/bin/python /home/termihoe/Documents/ai-cli/backend/homelab_daemon.py 900
+Restart=always
+RestartSec=15
+
+# Security hardening
+NoNewPrivileges=true
+ProtectHome=read-write
+ProtectSystem=full
+ReadWritePaths=/home/termihoe/.ai_cli_whatsapp /home/termihoe/Documents/ai-cli /home/termihoe/Documents/Obsidian_WhatsApp_CRM
+
+[Install]
+WantedBy=multi-user.target

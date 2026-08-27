@@ -177,13 +177,122 @@ class GoogleCalendarSync:
     """
 
     def __init__(self, credentials_path: Optional[Path] = None):
-        self.credentials_path = credentials_path or CREDENTIALS_FILE
-        self.token_path = TOKEN_FILE
+        # Look in both ~/.ai_cli_google and ~/.ai_cli_whatsapp
+        alt_cred = Path.home() / ".ai_cli_whatsapp" / "google_credentials.json"
+        alt_tok = Path.home() / ".ai_cli_whatsapp" / "google_token.json"
+        if credentials_path:
+            self.credentials_path = Path(credentials_path)
+        elif CREDENTIALS_FILE.exists():
+            self.credentials_path = CREDENTIALS_FILE
+        elif alt_cred.exists():
+            self.credentials_path = alt_cred
+        else:
+            self.credentials_path = CREDENTIALS_FILE
+
+        if TOKEN_FILE.exists():
+            self.token_path = TOKEN_FILE
+        elif alt_tok.exists():
+            self.token_path = alt_tok
+        else:
+            self.token_path = TOKEN_FILE
+
         self.service = None
 
     def is_configured(self) -> bool:
         """Returns True if Google Calendar API credentials exist."""
         return self.credentials_path.exists() or self.token_path.exists()
+
+    def get_status(self) -> Dict[str, Any]:
+        """Returns structured status of Google Calendar integration."""
+        is_configured = self.credentials_path.exists() or self.token_path.exists()
+        is_authenticated = False
+
+        if self.token_path.exists():
+            try:
+                from google.oauth2.credentials import Credentials
+                creds = Credentials.from_authorized_user_file(str(self.token_path), SCOPES)
+                if creds and (creds.valid or creds.refresh_token):
+                    is_authenticated = True
+            except Exception:
+                pass
+
+        return {
+            "configured": is_configured,
+            "authenticated": is_authenticated,
+            "credentials_file": str(self.credentials_path),
+            "credentials_exists": self.credentials_path.exists(),
+            "token_file": str(self.token_path),
+            "token_exists": self.token_path.exists(),
+            "scopes": SCOPES
+        }
+
+    def get_auth_url(self, redirect_uri: str = "urn:ietf:wg:oauth:2.0:oob") -> Optional[str]:
+        """Generates an OAuth authorization URL for the user."""
+        if not self.credentials_path.exists():
+            return None
+        try:
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(self.credentials_path),
+                scopes=SCOPES,
+                redirect_uri=redirect_uri
+            )
+            auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+            return auth_url
+        except Exception as e:
+            logger.error(f"Error generando URL de OAuth: {e}")
+            return None
+
+    def complete_auth(self, code: str, redirect_uri: str = "urn:ietf:wg:oauth:2.0:oob") -> Dict[str, Any]:
+        """Exchanges an authorization code for credentials and saves the token."""
+        if not self.credentials_path.exists():
+            return {"status": "error", "message": "credentials.json no existe."}
+        try:
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(self.credentials_path),
+                scopes=SCOPES,
+                redirect_uri=redirect_uri
+            )
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            self.token_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.token_path, "w", encoding="utf-8") as f:
+                f.write(creds.to_json())
+            self.service = None  # Reset cached service
+            return {"status": "success", "message": "Autenticación completada con éxito."}
+        except Exception as e:
+            return {"status": "error", "message": f"Error al procesar el código: {e}"}
+
+    def list_upcoming_events(self, max_results: int = 10) -> List[Dict[str, Any]]:
+        """Returns upcoming events from the user's primary calendar."""
+        service = self.get_service()
+        if not service:
+            return []
+        try:
+            now_iso = datetime.utcnow().isoformat() + "Z"
+            events_result = service.events().list(
+                calendarId="primary",
+                timeMin=now_iso,
+                maxResults=max_results,
+                singleEvents=True,
+                orderBy="startTime"
+            ).execute()
+            items = events_result.get("items", [])
+            output = []
+            for item in items:
+                start = item.get("start", {}).get("dateTime") or item.get("start", {}).get("date")
+                output.append({
+                    "id": item.get("id"),
+                    "summary": item.get("summary", "Sin título"),
+                    "start": start,
+                    "location": item.get("location", ""),
+                    "html_link": item.get("htmlLink")
+                })
+            return output
+        except Exception as e:
+            logger.error(f"Error listando eventos: {e}")
+            return []
 
     def get_service(self):
         """Builds and caches the Google Calendar API service instance."""
@@ -233,8 +342,8 @@ class GoogleCalendarSync:
     def create_event(
         self,
         title: str,
-        start_dt: datetime,
-        end_dt: Optional[datetime] = None,
+        start_dt: Any,
+        end_dt: Optional[Any] = None,
         location: str = "",
         description: str = "",
         attendees: Optional[List[str]] = None
@@ -243,6 +352,11 @@ class GoogleCalendarSync:
         Creates an event directly on the user's primary Google Calendar via API.
         Falls back to generating a 1-Click URL and an .ics file if API is not authenticated.
         """
+        if isinstance(start_dt, str):
+            start_dt = parse_flexible_datetime(start_dt) or datetime.now()
+        if isinstance(end_dt, str):
+            end_dt = parse_flexible_datetime(end_dt)
+
         if not end_dt:
             end_dt = start_dt + timedelta(hours=2)
 
