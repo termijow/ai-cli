@@ -893,20 +893,153 @@ async def get_chat_file_content(filename: str):
     return {"status": "success", "filename": file_path.name, "content": content}
 
 
+@app.get("/whatsapp/sync-status", tags=["WhatsApp"])
+async def get_whatsapp_sync_status():
+    """Provides complete inventory: exported chats, obsidian CRM contacts, events and pending state."""
+    from backend.whatsapp_session_exporter import CHATS_EXPORT_DIR
+    from backend.obsidian_vault_exporter import vault_exporter
+
+    exported_chats = []
+    obsidian_contacts_map = {}
+
+    # Read Obsidian contacts
+    if vault_exporter.contacts_dir.exists():
+        for md_file in vault_exporter.contacts_dir.glob("*.md"):
+            name = md_file.stem
+            memory = vault_exporter.read_contact_memory(name) or {}
+            obsidian_contacts_map[name.lower()] = {
+                "name": name,
+                "file": md_file.name,
+                "path": str(md_file),
+                "cumpleanos": memory.get("cumpleanos"),
+                "ubicacion": memory.get("direccion_ubicacion"),
+                "profesion": memory.get("profesion_ocupacion"),
+                "modified": md_file.stat().st_mtime
+            }
+
+    # Read exported .txt chats
+    if CHATS_EXPORT_DIR.exists():
+        for f in CHATS_EXPORT_DIR.glob("*.txt"):
+            stat = f.stat()
+            contact_name = f.stem.replace("Chat_de_WhatsApp_con_", "").replace("Chat de WhatsApp con ", "").replace("_", " ").strip()
+            obs_info = obsidian_contacts_map.get(contact_name.lower())
+            exported_chats.append({
+                "filename": f.name,
+                "path": str(f),
+                "contact": contact_name,
+                "size_kb": round(stat.st_size / 1024, 1),
+                "modified": stat.st_mtime,
+                "has_obsidian": bool(obs_info),
+                "obsidian_info": obs_info
+            })
+
+    # Read events
+    events = []
+    if vault_exporter.events_dir.exists():
+        for ef in vault_exporter.events_dir.glob("*.md"):
+            try:
+                txt = ef.read_text(encoding="utf-8")
+                fecha = re.search(r"fecha:\s*\"?([^\n\"]+)\"?", txt)
+                hora = re.search(r"hora:\s*\"?([^\n\"]+)\"?", txt)
+                lugar = re.search(r"lugar:\s*\"?([^\n\"]+)\"?", txt)
+                gcal = re.search(r"google_calendar_url:\s*\"?([^\n\"]+)\"?", txt)
+                events.append({
+                    "title": ef.stem.replace("_", " "),
+                    "fecha": fecha.group(1) if fecha else "",
+                    "hora": hora.group(1) if hora else "",
+                    "lugar": lugar.group(1) if lugar else "",
+                    "gcal_url": gcal.group(1) if gcal else "",
+                    "filename": ef.name
+                })
+            except Exception:
+                continue
+
+    return {
+        "status": "success",
+        "total_exported": len(exported_chats),
+        "total_obsidian_contacts": len(obsidian_contacts_map),
+        "total_events": len(events),
+        "vault_path": str(vault_exporter.vault_path),
+        "chats": sorted(exported_chats, key=lambda x: x["modified"], reverse=True),
+        "obsidian_contacts": list(obsidian_contacts_map.values()),
+        "events": events
+    }
+
+
+@app.get("/whatsapp/obsidian-contact/{contact_name}", tags=["WhatsApp", "Obsidian"])
+async def get_obsidian_contact_markdown(contact_name: str):
+    """Returns markdown content of the contact card stored in Obsidian CRM."""
+    from backend.obsidian_vault_exporter import vault_exporter
+    slug = vault_exporter._slugify(contact_name)
+    target = vault_exporter.contacts_dir / f"{slug}.md"
+
+    if not target.exists():
+        for f in vault_exporter.contacts_dir.glob("*.md"):
+            if contact_name.lower() in f.stem.lower() or f.stem.lower() in contact_name.lower():
+                target = f
+                break
+
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Contacto '{contact_name}' no registrado en Obsidian.")
+
+    content = target.read_text(encoding="utf-8")
+    return {
+        "status": "success",
+        "contact": contact_name,
+        "filename": target.name,
+        "path": str(target),
+        "content": content
+    }
+
+
 @app.post("/whatsapp/export-all", tags=["WhatsApp"])
 async def export_all_whatsapp_chats(req: Optional[WhatsAppSyncRequest] = None):
     """Automatically exports all chats from WhatsApp Web session in batch."""
     from backend.whatsapp_session_exporter import session_exporter
-    limit = req.limit if req and req.limit else 50
+    limit = req.limit if req and req.limit else 100
     scrolls = req.scrolls if req and req.scrolls else 8
 
-    exported = await session_exporter.export_all_chats(limit=limit, max_scrolls_per_chat=scrolls)
-    return {
-        "status": "success",
-        "exported_count": len(exported),
-        "exported_files": [str(f.name) for f in exported],
-        "message": f"Se exportaron {len(exported)} chats automáticamente a la carpeta 'chats/'."
-    }
+    report = await session_exporter.export_all_chats(limit=limit, max_scrolls_per_chat=scrolls)
+    return report
+
+
+@app.post("/whatsapp/export-all-stream", tags=["WhatsApp"])
+async def export_all_whatsapp_chats_stream(req: Optional[WhatsAppSyncRequest] = None):
+    """Streams real-time progress of WhatsApp Web batch chat exporter."""
+    from backend.whatsapp_session_exporter import session_exporter
+    limit = req.limit if req and req.limit else 100
+    scrolls = req.scrolls if req and req.scrolls else 8
+
+    event_queue = asyncio.Queue()
+
+    async def progress_cb(data):
+        await event_queue.put(data)
+
+    async def run_worker():
+        try:
+            await event_queue.put({"type": "info", "message": "Iniciando navegador Chromium con perfil persistente..."})
+            result = await session_exporter.export_all_chats(
+                limit=limit,
+                max_scrolls_per_chat=scrolls,
+                progress_callback=progress_cb
+            )
+            await event_queue.put({"type": "done", "result": result, "message": "✓ Exportación masiva completada."})
+        except Exception as e:
+            logger.error(f"Error en export-all-stream: {e}")
+            await event_queue.put({"type": "error", "message": f"Error: {str(e)}"})
+        finally:
+            await event_queue.put(None)
+
+    asyncio.create_task(run_worker())
+
+    async def event_generator():
+        while True:
+            item = await event_queue.get()
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/documents/list", tags=["Documents"])

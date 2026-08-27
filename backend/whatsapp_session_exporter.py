@@ -39,12 +39,47 @@ class WhatsAppSessionExporter:
         self.session_dir = session_dir or SESSION_DIR
         self.browser_context = None
 
+    def get_safe_filename(self, contact_name: str) -> Path:
+        safe_name = re.sub(r"[^\w\s-]", "", contact_name).strip().replace(" ", "_")
+        return CHATS_EXPORT_DIR / f"Chat_de_WhatsApp_con_{safe_name}.txt"
+
+    def is_already_exported(self, contact_name: str) -> bool:
+        """Checks if this contact has already been exported to chats/."""
+        target = self.get_safe_filename(contact_name)
+        if target.exists() and target.stat().st_size > 0:
+            return True
+        # Also check standard names
+        for f in CHATS_EXPORT_DIR.glob("*.txt"):
+            c_name = f.stem.replace("Chat_de_WhatsApp_con_", "").replace("Chat de WhatsApp con ", "").replace("_", " ")
+            if c_name.lower() == contact_name.lower():
+                return True
+        return False
+
+    def get_exported_contacts_map(self) -> Dict[str, Path]:
+        """Returns map of normalized contact name -> exported file path."""
+        result = {}
+        if CHATS_EXPORT_DIR.exists():
+            for f in CHATS_EXPORT_DIR.glob("*.txt"):
+                c_name = f.stem.replace("Chat_de_WhatsApp_con_", "").replace("Chat de WhatsApp con ", "").replace("_", " ").strip()
+                result[c_name] = f
+        return result
+
     def export_chat_from_text(self, text_content: str, contact_name: str) -> Path:
         """Saves text content to chats/<contact_name>.txt."""
-        safe_name = re.sub(r"[^\w\s-]", "", contact_name).strip().replace(" ", "_")
-        output_file = CHATS_EXPORT_DIR / f"Chat_de_WhatsApp_con_{safe_name}.txt"
+        output_file = self.get_safe_filename(contact_name)
         output_file.write_text(text_content, encoding="utf-8")
         return output_file
+
+    async def _dispatch_callback(self, cb: Optional[Any], data: Dict[str, Any]):
+        if not cb:
+            return
+        try:
+            if asyncio.iscoroutinefunction(cb):
+                await cb(data)
+            else:
+                cb(data)
+        except Exception as e:
+            pass
 
     async def open_interactive_session(self, target_contact: Optional[str] = None, max_scrolls: int = 15) -> Optional[Path]:
         """
@@ -151,20 +186,27 @@ class WhatsAppSessionExporter:
         self,
         limit: int = 100,
         max_scrolls_per_chat: int = 8,
+        force_reexport: bool = False,
         progress_callback: Optional[Any] = None
-    ) -> List[Path]:
+    ) -> Dict[str, Any]:
         """
         Connects to WhatsApp Web and automatically scrolls through the conversation list,
         exporting up to `limit` chats into individual .txt files in `chats/`.
+        - Checks if already exported: skips with a clear message ("Ya exporté este chat: no es necesario volverlo a exportar").
+        - Checks if unread: NEVER opens unread chats to preserve user's notifications.
+        - Reports which chats are pending export.
         """
         from playwright.async_api import async_playwright
 
-        print("\n🌐 Iniciando exportador masivo de WhatsApp Web...")
+        print("\n🌐 Iniciando exportador inteligente de WhatsApp Web...")
         print(f"📁 Directorio de sesión: {self.session_dir}")
-        print(f"🎯 Meta: exportar hasta {limit} chats automáticamente.")
+        print(f"🎯 Meta: hasta {limit} chats. (Saltando ya exportados y no leídos).")
 
         exported_files: List[Path] = []
-        exported_titles = set()
+        already_exported_skipped: List[str] = []
+        unread_skipped: List[str] = []
+        all_detected_contacts: List[str] = []
+        seen_in_session = set()
 
         async with async_playwright() as p:
             context = await p.chromium.launch_persistent_context(
@@ -198,7 +240,13 @@ class WhatsAppSessionExporter:
             else:
                 print("⚠️ Tiempo de espera agotado para el escaneo del QR.")
                 await context.close()
-                return exported_files
+                return {
+                    "status": "timeout",
+                    "exported": [],
+                    "skipped_cached": [],
+                    "skipped_unread": [],
+                    "pending": []
+                }
 
             # Wait for pane-side to be ready
             try:
@@ -211,9 +259,9 @@ class WhatsAppSessionExporter:
             consecutive_no_new = 0
             max_consecutive_no_new = 5
 
-            while len(exported_titles) < limit and consecutive_no_new < max_consecutive_no_new:
-                # Get visible chat elements in sidebar
-                chat_elements = await page.evaluate('''() => {
+            while (len(exported_files) + len(already_exported_skipped)) < limit and consecutive_no_new < max_consecutive_no_new:
+                # Get visible chat elements with unread indicators
+                chat_items = await page.evaluate('''() => {
                     const results = [];
                     const pane = document.querySelector("#pane-side");
                     if (!pane) return results;
@@ -221,27 +269,72 @@ class WhatsAppSessionExporter:
                     const rows = pane.querySelectorAll("div[role='listitem'], div[role='row'], div[data-testid='cell-frame-container']");
                     for (const r of rows) {
                         const titleEl = r.querySelector("span[title], div[title]");
-                        if (titleEl && titleEl.getAttribute("title")) {
-                            const title = titleEl.getAttribute("title").trim();
-                            if (title) results.push(title);
+                        if (!titleEl || !titleEl.getAttribute("title")) continue;
+                        const title = titleEl.getAttribute("title").trim();
+                        if (!title) continue;
+
+                        let hasUnread = false;
+                        const unreadEl = r.querySelector("[aria-label*='unread' i], [aria-label*='no leído' i], [aria-label*='no leídos' i], [data-icon='unread-count']");
+                        if (unreadEl) {
+                            hasUnread = true;
+                        } else {
+                            const badges = r.querySelectorAll("span");
+                            for (const b of badges) {
+                                const label = (b.getAttribute("aria-label") || "").toLowerCase();
+                                if (label.includes("unread") || label.includes("no leído") || label.includes("no leídos")) {
+                                    hasUnread = true;
+                                    break;
+                                }
+                            }
                         }
+                        results.push({ title, hasUnread });
                     }
                     return results;
                 }''')
 
                 found_new_in_batch = False
 
-                for title in chat_elements:
-                    if title in exported_titles:
+                for item in chat_items:
+                    title = item["title"]
+                    has_unread = item["hasUnread"]
+
+                    if title not in all_detected_contacts:
+                        all_detected_contacts.append(title)
+
+                    if title in seen_in_session:
                         continue
-                    if len(exported_titles) >= limit:
+                    if (len(exported_files) + len(already_exported_skipped)) >= limit:
                         break
 
                     found_new_in_batch = True
                     consecutive_no_new = 0
-                    current_idx = len(exported_titles) + 1
+                    seen_in_session.add(title)
 
-                    print(f"\n[{current_idx}/{limit}] 💬 Abriendo chat con: {title}...")
+                    # 1. Check if unread (PROTECTION)
+                    if has_unread:
+                        print(f"🔒 [{title}] Tiene mensajes sin leer por ti (omitido para no marcarlo como leído).")
+                        unread_skipped.append(title)
+                        await self._dispatch_callback(progress_callback, {
+                            "type": "skip_unread",
+                            "contact": title,
+                            "message": f"🔒 {title}: tiene mensajes sin leer (omitido para no marcarlo como leído)."
+                        })
+                        continue
+
+                    # 2. Check if already exported (CACHING)
+                    if not force_reexport and self.is_already_exported(title):
+                        print(f"⏭️ [{title}] Ya exporté este chat: no es necesario volverlo a exportar.")
+                        already_exported_skipped.append(title)
+                        await self._dispatch_callback(progress_callback, {
+                            "type": "skip_cached",
+                            "contact": title,
+                            "message": f"⏭️ {title}: ya fue exportado previamente, no es necesario volverlo a exportar."
+                        })
+                        continue
+
+                    # 3. Fresh read chat needing export
+                    current_num = len(exported_files) + 1
+                    print(f"\n[{current_num}/{limit}] 📥 Exportando chat nuevo con: {title}...")
 
                     # Click chat item
                     clicked = await page.evaluate('''(targetTitle) => {
@@ -260,7 +353,6 @@ class WhatsAppSessionExporter:
                     }''', title)
 
                     if not clicked:
-                        # Fallback: search contact in searchbox
                         try:
                             search_box = await page.query_selector("div[contenteditable='true'][data-tab='3'], div[role='textbox']")
                             if search_box:
@@ -285,18 +377,15 @@ class WhatsAppSessionExporter:
                         out_path = self.export_chat_from_text(formatted_text, title)
                         exported_files.append(out_path)
                         print(f"  ✓ {len(messages)} mensajes exportados -> {out_path.name}")
-                        if progress_callback:
-                            try:
-                                if asyncio.iscoroutinefunction(progress_callback):
-                                    await progress_callback(current_idx, limit, title, str(out_path), len(messages))
-                                else:
-                                    progress_callback(current_idx, limit, title, str(out_path), len(messages))
-                            except Exception:
-                                pass
+                        await self._dispatch_callback(progress_callback, {
+                            "type": "exported",
+                            "contact": title,
+                            "filename": out_path.name,
+                            "messages_count": len(messages),
+                            "message": f"✓ {title}: {len(messages)} mensajes exportados."
+                        })
                     else:
                         print(f"  ⚠ No se encontraron mensajes de texto legibles para {title}")
-
-                    exported_titles.add(title)
 
                 if not found_new_in_batch:
                     consecutive_no_new += 1
@@ -314,9 +403,112 @@ class WhatsAppSessionExporter:
                 if not can_scroll_more:
                     consecutive_no_new += 1
 
-            print(f"\n🎉 ¡Exportación masiva finalizada! Total de chats exportados: {len(exported_files)}")
+            # Determine pending chats
+            exported_set = set([f.stem.replace("Chat_de_WhatsApp_con_", "").replace("Chat de WhatsApp con ", "").replace("_", " ") for f in exported_files] + already_exported_skipped)
+            pending_chats = [c for c in all_detected_contacts if c not in exported_set and c not in unread_skipped]
+
+            print(f"\n╭──────────────────────────────────────────────────────────╮")
+            print(f"│ 📊 RESUMEN DE EXPORTACIÓN WHATSAPP                       │")
+            print(f"├──────────────────────────────────────────────────────────┤")
+            print(f"│ 📥 Nuevos chats exportados: {len(exported_files)}")
+            print(f"│ ⏭️  Ya exportados previamente (omitidos): {len(already_exported_skipped)}")
+            print(f"│ 🔒 Con mensajes sin leer (omitidos por seguridad): {len(unread_skipped)}")
+            print(f"│ ⏳ Chats que aún hacen falta exportar: {len(pending_chats)}")
+            print(f"╰──────────────────────────────────────────────────────────╯\n")
+
             await context.close()
-            return exported_files
+            return {
+                "status": "success",
+                "exported_files": [str(f.name) for f in exported_files],
+                "exported_count": len(exported_files),
+                "skipped_cached_count": len(already_exported_skipped),
+                "skipped_cached": already_exported_skipped,
+                "skipped_unread_count": len(unread_skipped),
+                "skipped_unread": unread_skipped,
+                "pending_count": len(pending_chats),
+                "pending_chats": pending_chats,
+                "total_detected": len(all_detected_contacts)
+            }
+
+    async def start_live_watcher(
+        self,
+        interval_seconds: int = 4,
+        on_message_callback: Optional[Any] = None,
+        stop_event: Optional[asyncio.Event] = None
+    ):
+        """
+        Active chat observer:
+        Monitors ONLY the currently active conversation in WhatsApp Web.
+        If user receives or sends new messages in the currently open chat,
+        it appends them to chats/ and triggers incremental intelligence.
+        NEVER clicks or opens unread chats in the sidebar!
+        """
+        from playwright.async_api import async_playwright
+
+        print("\n👁️ Iniciando Modo Escucha Activa (WhatsApp Live Watcher)...")
+        print("🔒 Solo lee los chats que tú mismo tengas abiertos o ya hayas leído.")
+        print("❌ NUNCA abre ni marca como leídos mensajes no leídos de tu bandeja.")
+
+        async with async_playwright() as p:
+            context = await p.chromium.launch_persistent_context(
+                user_data_dir=str(self.session_dir),
+                headless=self.headless,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-blink-features=AutomationControlled"
+                ],
+                viewport={"width": 1280, "height": 900}
+            )
+
+            page = context.pages[0] if context.pages else await context.new_page()
+            await page.goto("https://web.whatsapp.com", wait_until="domcontentloaded")
+
+            try:
+                await page.wait_for_selector("div#pane-side, header", timeout=60000)
+                print("✅ Sesión activa. Observando conversación activa...")
+            except Exception:
+                print("⚠️ No se detectó inicio de sesión activo.")
+                await context.close()
+                return
+
+            last_active_contact = None
+            last_message_count = 0
+
+            while stop_event is None or not stop_event.is_set():
+                try:
+                    header_title_el = await page.query_selector("header span[title]")
+                    if header_title_el:
+                        active_contact = await header_title_el.get_attribute("title")
+                        if active_contact:
+                            active_contact = active_contact.strip()
+                            messages = await self._extract_messages_from_page(page)
+
+                            if active_contact != last_active_contact:
+                                last_active_contact = active_contact
+                                last_message_count = len(messages)
+                                print(f"👁️ Chat activo detectado: {active_contact} ({len(messages)} mensajes)")
+                            else:
+                                if len(messages) > last_message_count:
+                                    diff = len(messages) - last_message_count
+                                    print(f"⚡ {diff} nuevo(s) mensaje(s) en conversación activa con {active_contact}!")
+                                    last_message_count = len(messages)
+
+                                    formatted_text = self._format_as_whatsapp_txt(messages, active_contact)
+                                    out_path = self.export_chat_from_text(formatted_text, active_contact)
+
+                                    await self._dispatch_callback(on_message_callback, {
+                                        "contact": active_contact,
+                                        "new_count": diff,
+                                        "total_messages": len(messages),
+                                        "file": str(out_path)
+                                    })
+                except Exception:
+                    pass
+
+                await asyncio.sleep(interval_seconds)
+
+            await context.close()
 
     async def _extract_messages_from_page(self, page) -> List[Dict[str, str]]:
         """Extracts text messages, timestamps, and senders from the DOM."""

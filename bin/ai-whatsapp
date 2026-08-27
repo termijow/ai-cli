@@ -420,6 +420,13 @@ def main():
             trigger_batch_session_sync(limit=limit, auto_analyze=auto_analyze)
         elif cmd in ["analyze-all", "batch", "batch-analyze"]:
             run_batch_analysis()
+        elif cmd in ["watch", "listen", "escucha", "live"]:
+            from backend.whatsapp_session_exporter import session_exporter
+            print_banner()
+            print("👁️ Iniciando Modo Escucha Activa...")
+            print("Este modo lee únicamente la conversación que tengas abierta mientras hablas.")
+            print("🔒 NUNCA abre ni toca mensajes no leídos de otros chats.")
+            asyncio.run(session_exporter.start_live_watcher())
         elif cmd in ["sync", "session", "web"]:
             target = sys.argv[2] if len(sys.argv) > 2 else None
             trigger_session_sync(target)
