@@ -80,9 +80,9 @@ fi
 
 cd "$BACKEND_DIR"
 if command -v setsid &>/dev/null; then
-    setsid "$PYTHON_BIN" -m uvicorn server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --log-level info < /dev/null > "$BACKEND_DIR/server.log" 2>&1 &
+    setsid "$PYTHON_BIN" -m uvicorn server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --reload --log-level info < /dev/null > "$BACKEND_DIR/server.log" 2>&1 &
 else
-    nohup "$PYTHON_BIN" -m uvicorn server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --log-level info < /dev/null > "$BACKEND_DIR/server.log" 2>&1 &
+    nohup "$PYTHON_BIN" -m uvicorn server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --reload --log-level info < /dev/null > "$BACKEND_DIR/server.log" 2>&1 &
 fi
 BACKEND_PID=$!
 disown "$BACKEND_PID" 2>/dev/null || true
@@ -91,17 +91,17 @@ sleep 2
 
 # Check Backend Health
 if curl -s --max-time 5 "http://127.0.0.1:$BACKEND_PORT/health" | grep -q "healthy"; then
-    print_status "success" "Backend Server activo: http://localhost:$BACKEND_PORT"
+    print_status "success" "Backend Server activo (modo desarrollo --reload): http://localhost:$BACKEND_PORT"
 else
     print_status "warning" "Backend iniciando en segundo plano..."
 fi
 
 # 2. Start Frontend Server
 echo ""
-print_status "info" "Iniciando Frontend Server en puerto $FRONTEND_PORT..."
+print_status "info" "Iniciando Frontend Server en modo desarrollo (Vite)..."
 
 if port_in_use "$FRONTEND_PORT"; then
-    print_status "warning" "Puerto $FRONTEND_PORT en uso. Reiniciando proceso..."
+    print_status "warning" "Puerto $FRONTEND_PORT ocupado (puede ser otro servicio/docker). Buscando puerto libre..."
     pkill -f "vite" 2>/dev/null || true
     sleep 1
 fi
@@ -116,13 +116,19 @@ FRONTEND_PID=$!
 disown "$FRONTEND_PID" 2>/dev/null || true
 
 sleep 2
-print_status "success" "Frontend Server activo: http://localhost:$FRONTEND_PORT (PID: $FRONTEND_PID)"
+
+ACTUAL_FRONTEND_PORT=$(grep -oE "http://localhost:[0-9]+" "$FRONTEND_DIR/vite.log" | tail -n1 | cut -d':' -f3 || true)
+if [[ -z "$ACTUAL_FRONTEND_PORT" ]]; then
+    ACTUAL_FRONTEND_PORT="$FRONTEND_PORT"
+fi
+
+print_status "success" "Frontend Server activo (Vite HMR): http://localhost:$ACTUAL_FRONTEND_PORT (PID: $FRONTEND_PID)"
 
 echo -e "\n${GREEN}╭──────────────────────────────────────────────────────────╮${NC}"
-echo -e "${GREEN}│${NC} ${GREEN}✨ TODOS LOS SERVICIOS ESTÁN EN EJECUCIÓN${NC}                ${GREEN}│${NC}"
+echo -e "${GREEN}│${NC} ${GREEN}✨ TODOS LOS SERVICIOS ESTÁN EN EJECUCIÓN (MODO DEV)${NC}       ${GREEN}│${NC}"
 echo -e "${GREEN}├──────────────────────────────────────────────────────────┤${NC}"
-echo -e "${GREEN}│${NC} 🌐 Frontend Web Studio: ${YELLOW}http://localhost:$FRONTEND_PORT${NC}"
-echo -e "${GREEN}│${NC} ⚙️  Backend REST API:    ${YELLOW}http://localhost:$BACKEND_PORT${NC}"
+echo -e "${GREEN}│${NC} 🌐 Frontend Web Studio: ${YELLOW}http://localhost:$ACTUAL_FRONTEND_PORT${NC}"
+echo -e "${GREEN}│${NC} ⚙️  Backend REST API:    ${YELLOW}http://localhost:$BACKEND_PORT${NC} (con --reload)"
 echo -e "${GREEN}│${NC} 🧠 LLM llama-server:   ${YELLOW}http://localhost:${LLAMA_PORT:-1234}${NC}"
 echo -e "${GREEN}╰──────────────────────────────────────────────────────────╯${NC}\n"
 
