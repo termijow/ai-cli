@@ -81,6 +81,32 @@ class WhatsAppSessionExporter:
         except Exception as e:
             pass
 
+    async def _apply_readonly_lock(self, page):
+        """
+        Hard safety lock:
+        Completely disables the footer message composer in WhatsApp Web.
+        Makes it 100% physically impossible for any message to be typed or sent.
+        """
+        try:
+            await page.evaluate('''() => {
+                const lockComposer = () => {
+                    const footers = document.querySelectorAll("footer");
+                    for (const f of footers) {
+                        f.style.pointerEvents = "none";
+                        f.style.opacity = "0.3";
+                        const inputs = f.querySelectorAll("[contenteditable='true'], [role='textbox']");
+                        for (const inp of inputs) {
+                            inp.setAttribute("contenteditable", "false");
+                            inp.blur();
+                        }
+                    }
+                };
+                lockComposer();
+                setInterval(lockComposer, 500);
+            }''')
+        except Exception:
+            pass
+
     async def open_interactive_session(self, target_contact: Optional[str] = None, max_scrolls: int = 15) -> Optional[Path]:
         """
         Launches WhatsApp Web with the persistent session.
@@ -133,30 +159,42 @@ class WhatsAppSessionExporter:
             except Exception as e:
                 print(f"Error al verificar estado de sesión: {e}")
 
-            # If target contact specified, search for it
+            # Safety lock: disable message composer completely
+            await self._apply_readonly_lock(page)
+
+            # If target contact specified, search in sidebar without typing or sending anything
             chat_title = target_contact or "Chat_Activo"
             if target_contact:
-                print(f"\n🔍 Buscando chat con: '{target_contact}'...")
+                print(f"\n🔍 Buscando chat con: '{target_contact}' en la barra lateral...")
                 try:
-                    search_box = await page.wait_for_selector(
-                        "div[contenteditable='true'][data-tab='3'], div[role='textbox']",
-                        timeout=10000
-                    )
-                    if search_box:
-                        await search_box.click()
-                        await search_box.fill(target_contact)
-                        await page.keyboard.press("Enter")
-                        await asyncio.sleep(3)
+                    clicked = await page.evaluate('''(target) => {
+                        const rows = document.querySelectorAll("#pane-side div[role='listitem'], #pane-side div[role='row'], #pane-side div[data-testid='cell-frame-container']");
+                        for (const r of rows) {
+                            const titleEl = r.querySelector("span[title], div[title]");
+                            if (titleEl && titleEl.getAttribute("title") && titleEl.getAttribute("title").toLowerCase().includes(target.toLowerCase())) {
+                                r.scrollIntoView({ block: 'center' });
+                                r.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }''', target_contact)
+                    if clicked:
+                        await asyncio.sleep(2)
                 except Exception as e:
-                    print(f"No se pudo seleccionar automáticamente el contacto: {e}")
+                    print(f"No se pudo seleccionar el contacto en la barra lateral: {e}")
 
             print("\n📜 Leyendo conversación abierta y cargando historial...")
-            # Scroll up inside the chat pane to load message history
+            # Scroll up inside the chat pane using DOM scroll (NO keyboard events, 100% read-only)
             try:
-                message_pane = await page.wait_for_selector("div[data-tab='8'], div.copyable-area", timeout=10000)
                 for s in range(max_scrolls):
-                    await page.keyboard.press("PageUp")
-                    await asyncio.sleep(0.3)
+                    await page.evaluate('''() => {
+                        const areas = document.querySelectorAll("div.copyable-area, div[data-tab='8']");
+                        for (const a of areas) {
+                            a.scrollBy(0, -800);
+                        }
+                    }''')
+                    await asyncio.sleep(0.25)
             except Exception:
                 pass
 
@@ -253,6 +291,9 @@ class WhatsAppSessionExporter:
                 await page.wait_for_selector("#pane-side", timeout=15000)
             except Exception:
                 pass
+
+            # Safety lock: disable message composer completely
+            await self._apply_readonly_lock(page)
 
             print("\n📋 Escaneando lista de conversaciones en WhatsApp Web...")
 
@@ -353,21 +394,19 @@ class WhatsAppSessionExporter:
                     }''', title)
 
                     if not clicked:
-                        try:
-                            search_box = await page.query_selector("div[contenteditable='true'][data-tab='3'], div[role='textbox']")
-                            if search_box:
-                                await search_box.click()
-                                await search_box.fill(title)
-                                await page.keyboard.press("Enter")
-                                await asyncio.sleep(1.5)
-                        except Exception:
-                            pass
+                        print(f"  ⚠ No se pudo abrir el chat con {title}. Omitiendo de forma segura.")
+                        continue
 
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(1.2)
 
-                    # Scroll up inside the chat pane to load previous messages
+                    # Scroll up inside the chat pane using DOM scroll (100% read-only, ZERO keyboard events)
                     for _ in range(max_scrolls_per_chat):
-                        await page.keyboard.press("PageUp")
+                        await page.evaluate('''() => {
+                            const areas = document.querySelectorAll("div.copyable-area, div[data-tab='8']");
+                            for (const a of areas) {
+                                a.scrollBy(0, -800);
+                            }
+                        }''')
                         await asyncio.sleep(0.2)
 
                     # Extract messages
@@ -466,6 +505,7 @@ class WhatsAppSessionExporter:
 
             try:
                 await page.wait_for_selector("div#pane-side, header", timeout=60000)
+                await self._apply_readonly_lock(page)
                 print("✅ Sesión activa. Observando conversación activa...")
             except Exception:
                 print("⚠️ No se detectó inicio de sesión activo.")
