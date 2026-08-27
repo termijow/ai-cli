@@ -21,6 +21,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.whatsapp_parser import WhatsAppParser, whatsapp_parser
+from backend.obsidian_vault_exporter import vault_exporter
 
 STORAGE_DIR = Path.home() / ".ai_cli_whatsapp"
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -158,21 +159,18 @@ class LargeChatAnalyzer:
 
         prompt = f"""Estás analizando un fragmento cronológico ({chunk['date_range']}) de una conversación de WhatsApp entre: {', '.join(participants)}.
 
-DATOS YA CONOCIDOS DE LOS PARTICIPANTES:
+DATOS YA CONOCIDOS DE LOS PARTICIPANTES (MEMORIA PREVIA OBSIDIAN CRM):
 {known_context}
 
 NUEVO FRAGMENTO DE CHAT ({chunk['message_count']} mensajes):
 {dialogue}
 
-TAREA:
+TAREA DE EXTRACCIÓN CON MODELO LOCAL QWEN 3.6:
 Extrae hechos nuevos, detalles concretos o actualizaciones mencionadas en este fragmento.
-Busca:
-1. Cumpleaños o edades.
-2. Direcciones, barrios, ciudades o lugares frecuentes.
-3. Profesión, estudios, trabajos o proyectos.
-4. Gustos, comidas favoritas, hobbies o disgustos.
-5. Eventos importantes, compromisos o fechas acordadas.
-6. Dinámica de la relación o temas recurrentes.
+Enfócate en:
+1. Datos Personales Concretos: Cumpleaños, edad, dirección donde vive o trabaja, ciudad, profesión, gustos, comidas favoritas, hobbies.
+2. CITAS, SALIDAS Y EVENTOS (CRUCIAL PARA GOOGLE CALENDAR):
+   Si en la conversación acuerdan salir, verse, una reunión o plan (ej: "salimos?", "vamos a Xx a las XX", "nos vemos mañana a las 3"), extrae el evento con su título, fecha y hora estimada, y lugar exacto.
 
 IMPORTANTE: Sé directo y genera el bloque JSON válido inmediatamente sin razonamientos extensos.
 
@@ -182,17 +180,20 @@ Responde en JSON con este formato:
   "nuevas_notas_participantes": [
     {{
       "nombre": "Nombre del participante",
-      "cumpleanos": "Fecha o null",
-      "direccion_o_ciudad": "Lugar o null",
-      "profesion_o_estudios": "Detalle o null",
-      "gustos_e_intereses": ["interés nuevo"],
+      "cumpleanos": "Fecha o edad o null",
+      "direccion_o_ciudad": "Dirección exacta, barrio o ciudad o null",
+      "profesion_o_estudios": "Profesión, estudios o null",
+      "gustos_e_intereses": ["interés o comida o hobby nuevo"],
       "hechos_clave": ["Hecho o anécdota relevante"]
     }}
   ],
   "eventos_o_acuerdos": [
     {{
-      "fecha": "Fecha mencionada o null",
-      "descripcion": "Descripción del acuerdo/evento"
+      "titulo": "Título descriptivo de la salida (ej: Salida con Felipe a Xx)",
+      "fecha": "Fecha y hora del plan (ej: 2026-08-28 20:00 o hoy a las 8pm)",
+      "lugar": "Lugar exacto del encuentro o null",
+      "descripcion": "Detalle del plan o salida acordada",
+      "es_salida_o_cita": true
     }}
   ],
   "resumen_fragmento": "Resumen de 1 o 2 oraciones de lo que hablaron en esta etapa"
@@ -249,13 +250,17 @@ Responde en JSON con este formato:
                 if fact and fact_entry not in target["notas_clave"]:
                     target["notas_clave"].append(fact_entry)
 
-        # Merge events
+        # Merge events and plans
         events_list = global_profile.setdefault("eventos_y_compromisos", [])
         for ev in batch_delta.get("eventos_o_acuerdos", []):
-            if isinstance(ev, dict) and ev.get("descripcion"):
+            if isinstance(ev, dict) and (ev.get("descripcion") or ev.get("titulo")):
+                title = ev.get("titulo") or ev.get("descripcion", "Plan acordado")
                 events_list.append({
+                    "titulo": title,
                     "fecha": ev.get("fecha") or date_range,
-                    "descripcion": ev["descripcion"]
+                    "lugar": ev.get("lugar") or "",
+                    "descripcion": ev.get("descripcion") or title,
+                    "es_salida_o_cita": ev.get("es_salida_o_cita", True)
                 })
 
         # Append timeline stage summary
@@ -303,10 +308,23 @@ Responde en JSON con este formato:
             "percent": 10
         }
 
+        # 1. Cargar memoria previa conocida del contacto desde Obsidian CRM
+        prior_memory = vault_exporter.read_contact_memory(chat_title)
+        initial_participants = []
+        if prior_memory:
+            initial_participants.append({
+                "nombre": prior_memory["nombre"],
+                "cumpleanos": prior_memory.get("cumpleanos"),
+                "direccion_ubicacion": prior_memory.get("direccion_ubicacion"),
+                "profesion_ocupacion": prior_memory.get("profesion_ocupacion"),
+                "intereses_hobbies": prior_memory.get("intereses_hobbies") or [],
+                "notas_clave": prior_memory.get("notas_previas") or []
+            })
+
         global_profile: Dict[str, Any] = {
             "titulo": chat_title,
             "total_mensajes": chunk_data["total_messages"],
-            "participantes": [],
+            "participantes": initial_participants,
             "eventos_y_compromisos": [],
             "cronologia_resumenes": [],
             "total_batches_procesados": 0
@@ -377,14 +395,21 @@ Responde en JSON con este formato:
         with open(save_path_md, "w", encoding="utf-8") as f:
             f.write(markdown_dossier)
 
+        # 2. Sincronización y exportación automática a Obsidian CRM y Google Calendar
+        try:
+            obsidian_result = vault_exporter.export_profile(global_profile)
+        except Exception as e:
+            obsidian_result = {"error": str(e)}
+
         yield {
             "type": "complete",
             "percent": 100,
-            "message": "¡Análisis completado con éxito!",
+            "message": "¡Análisis completado con éxito! Libreta de Obsidian y eventos actualizados.",
             "profile": global_profile,
             "markdown_dossier": markdown_dossier,
             "saved_json": str(save_path_json),
             "saved_md": str(save_path_md),
+            "obsidian_crm": obsidian_result,
             "total_tokens_spent": total_tokens_spent
         }
 

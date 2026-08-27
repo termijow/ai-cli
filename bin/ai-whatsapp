@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 ai-whatsapp - AI-CLI WhatsApp Massive Chat Analyzer CLI
-Processes WhatsApp conversations of any length (up to 1M+ tokens) in batches
-with real-time progress bars, token tracking, and local entity/relationship extraction.
+Processes WhatsApp conversations of any length in batches with Qwen 3.6 35B A3B,
+maintains an incremental Obsidian CRM notebook with personal facts,
+and syncs meetings/events directly to Google Calendar.
 """
 
 import sys
@@ -25,6 +26,8 @@ import time
 import asyncio
 
 from backend.whatsapp_analyzer_engine import LargeChatAnalyzer, STORAGE_DIR
+from backend.obsidian_vault_exporter import vault_exporter
+from backend.google_calendar_sync import calendar_sync, GoogleCalendarSync
 from backend.server import query_llama_cpp
 
 try:
@@ -42,13 +45,13 @@ except ImportError:
 def print_banner():
     if RICH_AVAILABLE:
         console.print(Panel.fit(
-            "[bold green]💬 AI-CLI WhatsApp Chat & Relationship Analyzer[/bold green]\n"
-            "[dim]Procesamiento masivo por batches (10k a 1M+ tokens) con IA 100% local[/dim]",
+            "[bold green]💬 AI-CLI WhatsApp Intelligence & Personal CRM[/bold green]\n"
+            "[dim]Procesamiento por batches con Qwen 3.6 35B A3B + Memoria Obsidian + Google Calendar[/dim]",
             border_style="green"
         ))
     else:
         print("\n========================================================")
-        print("💬 AI-CLI WhatsApp Chat & Relationship Analyzer")
+        print("💬 AI-CLI WhatsApp Intelligence & Personal CRM")
         print("========================================================\n")
 
 
@@ -56,10 +59,11 @@ def scan_for_chats() -> list:
     """Scan common folders for exported WhatsApp .txt files."""
     candidates = []
     search_dirs = [
+        PROJECT_ROOT / "chats",
         Path.home() / "Downloads",
         Path.home() / "Descargas",
         Path.home() / "Documents",
-        PROJECT_ROOT / "chats",
+        Path.home() / "Documents" / "Obsidian_WhatsApp_CRM",
         PROJECT_ROOT / "uploads",
         Path.cwd()
     ]
@@ -87,7 +91,7 @@ def list_saved_dossiers():
         return
 
     if RICH_AVAILABLE:
-        table = Table(title="📁 Dossiers y Perfiles Guardados", border_style="green")
+        table = Table(title="📁 Dossiers y Perfiles Guardados en Memoria", border_style="green")
         table.add_column("Contacto / Chat", style="bold cyan")
         table.add_column("Tamaño", style="dim")
         table.add_column("Última Modificación", style="yellow")
@@ -104,6 +108,59 @@ def list_saved_dossiers():
         print("Dossiers guardados:")
         for f in md_files:
             print(f"  • {f.name} ({f.stat().st_size} bytes)")
+
+
+def list_obsidian_events():
+    """Lists events detected in Obsidian CRM and their Google Calendar status."""
+    events_dir = vault_exporter.events_dir
+    event_files = list(events_dir.glob("*.md"))
+    # Exclude aggregate agenda
+    event_files = [f for f in event_files if f.name != "Compromisos_y_Eventos.md"]
+
+    if not event_files:
+        print("\n📅 No hay eventos ni salidas registradas en Obsidian CRM todavía.")
+        return
+
+    if RICH_AVAILABLE:
+        table = Table(title="📅 Salidas y Eventos Detectados (WhatsApp ➔ Google Calendar)", border_style="cyan")
+        table.add_column("Evento", style="bold green")
+        table.add_column("Fecha", style="yellow")
+        table.add_column("Hora", style="cyan")
+        table.add_column("Lugar", style="magenta")
+        table.add_column("Google Calendar", style="bold blue")
+
+        for ef in sorted(event_files):
+            try:
+                content = ef.read_text(encoding="utf-8")
+                title = ef.stem
+                fecha = "N/A"
+                hora = "N/A"
+                lugar = "N/A"
+                gcal_url = ""
+
+                for line in content.splitlines():
+                    if line.startswith("titulo:"):
+                        title = line.split(":", 1)[1].strip().strip('"')
+                    elif line.startswith("fecha:"):
+                        fecha = line.split(":", 1)[1].strip().strip('"')
+                    elif line.startswith("hora:"):
+                        hora = line.split(":", 1)[1].strip().strip('"')
+                    elif line.startswith("lugar:"):
+                        lugar = line.split(":", 1)[1].strip().strip('"')
+                    elif line.startswith("google_calendar_url:"):
+                        gcal_url = line.split(":", 1)[1].strip().strip('"')
+
+                link_display = f"[link={gcal_url}]Añadir (1 Clic)[/link]" if gcal_url else "Listo"
+                table.add_row(title, fecha, hora, lugar or "No especificado", link_display)
+            except Exception:
+                continue
+
+        console.print(table)
+        print(f"\n💡 Libreta Obsidian: {events_dir}")
+    else:
+        print("\nEventos detectados:")
+        for ef in sorted(event_files):
+            print(f"  • {ef.stem}")
 
 
 def show_dossier(query: str):
@@ -123,6 +180,21 @@ def show_dossier(query: str):
         print(content)
 
 
+def trigger_session_sync(contact_name: Optional[str] = None):
+    """Launches Playwright WhatsApp Web session to export chats."""
+    from backend.whatsapp_session_exporter import session_exporter
+    print_banner()
+    print("🚀 Abriendo sincronizador de WhatsApp Web...")
+    print("Se abrirá una ventana para escanear el QR (solo la primera vez) o exportar tus chats activos.")
+    
+    out_file = asyncio.run(session_exporter.open_interactive_session(target_contact=contact_name))
+    if out_file and out_file.exists():
+        print(f"\n✅ Chat exportado con éxito a: {out_file}")
+        resp = input("\n¿Deseas analizar este chat ahora mismo con Qwen 3.6? (y/n) [y]: ").strip().lower() or "y"
+        if resp == "y":
+            asyncio.run(run_analysis(out_file))
+
+
 async def run_analysis(file_path: Path):
     """Run full batched analysis on chat file with progress bar."""
     print_banner()
@@ -137,9 +209,11 @@ async def run_analysis(file_path: Path):
     if RICH_AVAILABLE:
         console.print(f"📄 [bold]Archivo:[/bold] {file_path.name} ({file_size_mb:.2f} MB)")
         console.print(f"👤 [bold]Conversación:[/bold] [cyan]{chat_title}[/cyan]")
+        console.print(f"🧠 [bold]Modelo:[/bold] [magenta]Qwen 3.6 35B A3B Local (40k Context)[/magenta]")
     else:
         print(f"Archivo: {file_path.name} ({file_size_mb:.2f} MB)")
         print(f"Conversación: {chat_title}")
+        print("Modelo: Qwen 3.6 35B A3B Local (40k Context)")
 
     # Read chat content
     try:
@@ -149,11 +223,17 @@ async def run_analysis(file_path: Path):
         with open(file_path, "r", encoding="latin-1") as f:
             raw_text = f.read()
 
-    engine = LargeChatAnalyzer(chunk_size_messages=150)
+    # With Qwen 3.6 35B A3B 40k context, batch size of 200 messages is fast and accurate
+    engine = LargeChatAnalyzer(chunk_size_messages=200)
 
     # Prepare LLM query wrapper
     def call_llm_sync(prompt: str) -> dict:
-        return query_llama_cpp(prompt, system_prompt="Eres un extractor de datos de WhatsApp. Responde directamente con el bloque JSON solicitado.", max_tokens=3000, temperature=0.1)
+        return query_llama_cpp(
+            prompt,
+            system_prompt="Eres un extractor de datos de WhatsApp. Responde directamente con el bloque JSON solicitado.",
+            max_tokens=3000,
+            temperature=0.1
+        )
 
     if RICH_AVAILABLE and sys.stdout.isatty():
         with Progress(
@@ -194,9 +274,10 @@ async def run_analysis(file_path: Path):
 
             if final_dossier:
                 console.print(Panel(
-                    f"[bold green]✨ Dossier de Inteligencia Generado Exitosamente[/bold green]\n\n"
-                    f"📁 [bold]Markdown Guardado:[/bold] {final_dossier['saved_md']}\n"
-                    f"💾 [bold]JSON Guardado:[/bold] {final_dossier['saved_json']}\n"
+                    f"[bold green]✨ Inteligencia Extraída y Guardada Exitosamente[/bold green]\n\n"
+                    f"📁 [bold]Dossier Local:[/bold] {final_dossier['saved_md']}\n"
+                    f"📓 [bold]Libreta Obsidian CRM:[/bold] {vault_exporter.contacts_dir / f'{chat_title}.md'}\n"
+                    f"📅 [bold]Eventos y Salidas:[/bold] {vault_exporter.events_dir}\n"
                     f"⚡ [bold]Tokens Procesados:[/bold] {final_dossier.get('total_tokens_spent', 0):,}",
                     border_style="green"
                 ))
@@ -206,8 +287,7 @@ async def run_analysis(file_path: Path):
                 console.print(Markdown(final_dossier["markdown_dossier"]))
 
     else:
-        # Clean stdout progress
-        print("\n🚀 Iniciando procesamiento por batches...")
+        print("\n🚀 Iniciando procesamiento por batches con Qwen 3.6...")
         final_dossier = None
         async for event in engine.analyze_chat_stream(raw_text, call_llm_sync, chat_title=chat_title):
             etype = event.get("type")
@@ -219,7 +299,7 @@ async def run_analysis(file_path: Path):
                 print(f"  [✓] Fragmento {event['batch_index']}/{event['total_batches']} procesado con éxito.")
             elif etype == "complete":
                 final_dossier = event
-                print(f"\n✅ ¡Análisis completado al 100%! Dossier guardado en:\n  📁 {event['saved_md']}\n  💾 {event['saved_json']}")
+                print(f"\n✅ ¡Análisis completado al 100%! Dossier guardado en:\n  📁 {event['saved_md']}\n  📓 Obsidian: {vault_exporter.vault_path}")
 
         if final_dossier:
             print("\n" + "="*50 + " DOSSIER RESUMEN " + "="*50)
@@ -233,10 +313,18 @@ def interactive_select():
     candidates = scan_for_chats()
 
     if not candidates:
-        print("\n⚠️ No se encontraron archivos de chat automáticamente en Downloads/Documents.")
-        path_in = input("\nIntroduce la ruta manual al archivo .txt del chat: ").strip()
-        if path_in:
-            asyncio.run(run_analysis(Path(path_in).expanduser().resolve()))
+        print("\n⚠️ No se encontraron archivos de chat automáticamente.")
+        print("Puedes sincronizar desde WhatsApp Web o indicar la ruta de un archivo.")
+        print("\nOpciones:")
+        print("  1) Sincronizar chat desde WhatsApp Web (Playwright)")
+        print("  2) Escribir ruta manual a un archivo .txt")
+        ch = input("\nElige una opción [1]: ").strip() or "1"
+        if ch == "1":
+            trigger_session_sync()
+        elif ch == "2":
+            path_in = input("Introduce la ruta manual al archivo .txt del chat: ").strip()
+            if path_in:
+                asyncio.run(run_analysis(Path(path_in).expanduser().resolve()))
         return
 
     print(f"\nSe encontraron {len(candidates)} conversaciones:")
@@ -244,10 +332,13 @@ def interactive_select():
         size_kb = c.stat().st_size / 1024
         print(f"  {idx}) {c.name} ({size_kb:.1f} KB) - {c.parent}")
 
+    print("  s) Sincronizar chat desde sesión de WhatsApp Web")
     print("  0) Escribir ruta manual")
 
     choice = input("\nElige una opción [1]: ").strip() or "1"
-    if choice == "0":
+    if choice.lower() == "s":
+        trigger_session_sync()
+    elif choice == "0":
         path_in = input("Introduce la ruta al archivo .txt: ").strip()
         if path_in:
             asyncio.run(run_analysis(Path(path_in).expanduser().resolve()))
@@ -266,8 +357,23 @@ def main():
     if len(sys.argv) == 1:
         interactive_select()
     else:
-        cmd = sys.argv[1]
-        if cmd in ["list", "saved", "dossiers"]:
+        raw_arg = sys.argv[1]
+        cmd = raw_arg.lower()
+        if Path(raw_arg).exists():
+            asyncio.run(run_analysis(Path(raw_arg).expanduser().resolve()))
+        elif cmd in ["list", "saved", "dossiers"]:
+            list_saved_dossiers()
+        elif cmd in ["events", "calendar", "eventos"]:
+            list_obsidian_events()
+        elif cmd in ["sync", "session", "web"]:
+            target = sys.argv[2] if len(sys.argv) > 2 else None
+            trigger_session_sync(target)
+        elif cmd in ["crm", "obsidian", "contacts"]:
+            status = vault_exporter.get_status()
+            print("\n📓 Estado de Obsidian CRM Vault:")
+            print(f"  • Ruta: {status['vault_path']}")
+            print(f"  • Contactos registrados: {status['contacts_count']}")
+            print(f"  • Eventos registrados: {status.get('events_count', 0)}")
             list_saved_dossiers()
         elif cmd in ["show", "view", "cat"] and len(sys.argv) > 2:
             show_dossier(sys.argv[2])
@@ -277,10 +383,12 @@ def main():
             asyncio.run(run_analysis(Path(cmd).expanduser().resolve()))
         else:
             print(f"Uso:")
-            print(f"  ai whatsapp                     - Buscar y seleccionar chats interactivamente")
-            print(f"  ai whatsapp /ruta/chat.txt       - Analizar archivo específico con barra de progreso")
-            print(f"  ai whatsapp list                - Ver perfiles guardados")
-            print(f"  ai whatsapp show <contacto>     - Ver dossier de un contacto")
+            print(f"  ai whatsapp                       - Menú interactivo")
+            print(f"  ai whatsapp sync [contacto]       - Conectar a WhatsApp Web y exportar chat")
+            print(f"  ai whatsapp /ruta/chat.txt         - Analizar chat con Qwen 3.6 y guardar en Obsidian")
+            print(f"  ai whatsapp calendar              - Ver eventos y enlaces directos a Google Calendar")
+            print(f"  ai whatsapp crm                   - Ver contactos en la libreta Obsidian")
+            print(f"  ai whatsapp show <contacto>       - Ver dossier detallado")
 
 
 if __name__ == "__main__":

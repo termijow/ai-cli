@@ -3,7 +3,8 @@
 obsidian_vault_exporter.py - WhatsApp Knowledge Base to Obsidian Vault CRM Exporter
 
 Exports parsed WhatsApp conversations, contacts, profiles, key facts, and dates
-into a structured Obsidian Vault with YAML Frontmatter, Dataview queries, and Wikilinks.
+into a structured Obsidian Vault with YAML Frontmatter, Dataview queries, Wikilinks,
+and 1-Click Google Calendar / .ics event integrations.
 """
 
 import os
@@ -11,9 +12,10 @@ import re
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DEFAULT_VAULT_DIR = Path.home() / "Documents" / "Obsidian_WhatsApp_CRM"
+
 
 class ObsidianVaultExporter:
     def __init__(self, vault_path: Optional[Path] = None):
@@ -32,6 +34,153 @@ class ObsidianVaultExporter:
         clean = re.sub(r'[^\w\s-]', '', text, flags=re.UNICODE).strip()
         return re.sub(r'[-\s]+', '_', clean)
 
+    def read_contact_memory(self, contact_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Reads existing knowledge about a contact from the Obsidian Vault.
+        Parses YAML frontmatter and notes to provide prior context to Qwen 3.6.
+        """
+        self._ensure_dirs()
+        slug = self._slugify(contact_name)
+        target_path = self.contacts_dir / f"{slug}.md"
+
+        if not target_path.exists():
+            # Search case-insensitively or fuzzy
+            for f in self.contacts_dir.glob("*.md"):
+                if contact_name.lower() in f.stem.lower() or f.stem.lower() in contact_name.lower():
+                    target_path = f
+                    break
+
+        if not target_path.exists():
+            return None
+
+        try:
+            content = target_path.read_text(encoding="utf-8")
+            memory = {
+                "nombre": contact_name,
+                "cumpleanos": None,
+                "direccion_ubicacion": None,
+                "profesion_ocupacion": None,
+                "intereses_hobbies": [],
+                "notas_previas": []
+            }
+
+            # Parse YAML Frontmatter
+            fm_match = re.search(r"^---\s*\n(.*?)\n---", content, flags=re.DOTALL)
+            if fm_match:
+                fm_text = fm_match.group(1)
+                for line in fm_text.splitlines():
+                    if line.startswith("cumpleanos:"):
+                        val = line.split(":", 1)[1].strip().strip('"\'')
+                        if val and val != "None":
+                            memory["cumpleanos"] = val
+                    elif line.startswith("ubicacion:"):
+                        val = line.split(":", 1)[1].strip().strip('"\'')
+                        if val and val != "None":
+                            memory["direccion_ubicacion"] = val
+                    elif line.startswith("profesion:"):
+                        val = line.split(":", 1)[1].strip().strip('"\'')
+                        if val and val != "None":
+                            memory["profesion_ocupacion"] = val
+                    elif line.startswith("intereses:"):
+                        try:
+                            val = line.split(":", 1)[1].strip()
+                            memory["intereses_hobbies"] = json.loads(val)
+                        except Exception:
+                            pass
+
+            # Parse Notes
+            notes_match = re.search(r"## 📝 Historial de Hechos, Anécdotas y Notas Clave\s*\n(.*?)(?=\n## |\Z)", content, flags=re.DOTALL)
+            if notes_match:
+                for line in notes_match.group(1).splitlines():
+                    line = line.strip()
+                    if line.startswith("- 🔹") or line.startswith("-"):
+                        clean_note = re.sub(r"^-\s*🔹?\s*", "", line)
+                        if clean_note and not clean_note.startswith("*Sin notas"):
+                            memory["notas_previas"].append(clean_note)
+
+            return memory
+        except Exception as e:
+            print(f"Error leyendo memoria de contacto en Obsidian: {e}")
+            return None
+
+    def export_event_note(self, event: Dict[str, Any], contact_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Creates an individual markdown note and .ics file in Eventos_y_Compromisos/
+        with 1-Click Google Calendar URL and metadata.
+        """
+        from backend.google_calendar_sync import (
+            parse_flexible_datetime,
+            generate_google_calendar_url,
+            generate_ics_file
+        )
+
+        title = event.get("titulo") or event.get("descripcion") or "Compromiso de WhatsApp"
+        location = event.get("lugar") or ""
+        date_str = str(event.get("fecha") or event.get("fecha_inicio") or "")
+        desc = event.get("descripcion") or f"Plan acordado con {contact_name or 'contacto'}"
+
+        now = datetime.now()
+        start_dt = parse_flexible_datetime(date_str) or (now + timedelta(days=1)).replace(hour=20, minute=0, second=0)
+        end_dt = start_dt + timedelta(hours=2)
+
+        gcal_url = generate_google_calendar_url(title, start_dt, end_dt, location, desc)
+
+        slug = self._slugify(f"{start_dt.strftime('%Y%m%d')}_{title}")
+        event_path = self.events_dir / f"{slug}.md"
+        ics_path = self.events_dir / f"{slug}.ics"
+
+        # Generate .ics file
+        try:
+            generate_ics_file(title, start_dt, end_dt, location, desc, output_path=ics_path)
+        except Exception as e:
+            print(f"Nota: No se pudo generar .ics: {e}")
+
+        contact_wikilink = f"[[{contact_name}]]" if contact_name else "[[Contacto]]"
+        loc_wikilink = f"[[{location}]]" if location else "*No especificado*"
+
+        frontmatter = [
+            "---",
+            f"id: evento-{slug}",
+            f"titulo: \"{title}\"",
+            "tags: [evento, compromiso, whatsapp, calendario]",
+            f"fecha: \"{start_dt.strftime('%Y-%m-%d')}\"",
+            f"hora: \"{start_dt.strftime('%H:%M')}\"",
+            f"lugar: \"{location}\"",
+            f"contacto: \"{contact_wikilink}\"",
+            "google_calendar_status: \"pendiente\"",
+            f"google_calendar_url: \"{gcal_url}\"",
+            f"ics_file: \"{ics_path.name}\"",
+            f"fecha_deteccion: \"{datetime.now().strftime('%Y-%m-%d %H:%M')}\"",
+            "---"
+        ]
+
+        body = [
+            f"# 📅 {title}",
+            "",
+            "## 📌 Detalles del Evento / Compromiso",
+            f"- **📆 Fecha:** {start_dt.strftime('%A, %d de %B de %Y')}",
+            f"- **⏰ Hora:** {start_dt.strftime('%H:%M')}",
+            f"- **📍 Lugar:** {loc_wikilink}",
+            f"- **👥 Participantes:** {contact_wikilink}",
+            "",
+            "## 📝 Contexto del Acuerdo",
+            f"> {desc}",
+            "",
+            "## 🌐 Sincronización de Calendario",
+            f"- 🔗 **[👉 Añadir a Google Calendar (1 Clic Web)]({gcal_url})**",
+            f"- 📥 **Archivo Calendario Local (.ics):** `[[{ics_path.name}]]` *(haz doble clic para agregarlo a tu calendario del sistema)*",
+            ""
+        ]
+
+        event_path.write_text("\n".join(frontmatter) + "\n\n" + "\n".join(body), encoding="utf-8")
+        return {
+            "title": title,
+            "path": str(event_path),
+            "ics_path": str(ics_path),
+            "google_calendar_url": gcal_url,
+            "start_dt": start_dt.isoformat()
+        }
+
     def export_profile(self, profile: Dict[str, Any], chat_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Export full WhatsApp profile and contacts to Obsidian Vault."""
         self._ensure_dirs()
@@ -40,7 +189,6 @@ class ObsidianVaultExporter:
 
         participants = profile.get("participantes", [])
         events = profile.get("eventos_y_compromisos", [])
-        chronology = profile.get("cronologia_resumenes", [])
 
         # 1. Export each Contact Note
         for p in participants:
@@ -84,7 +232,7 @@ class ObsidianVaultExporter:
                 "",
                 "## 📌 Ficha de Perfil Rápido",
                 f"- **🎂 Cumpleaños:** {f'[[{birthday}]]' if birthday else '*No mencionado*'}",
-                f"- **📍 Ubicación:** {f'[[{location}]]' if location and location != 'No mencionada' else '*No mencionada*'}",
+                f"- **📍 Ubicación / Dirección:** {f'[[{location}]]' if location and location != 'No mencionada' else '*No mencionada*'}",
                 f"- **💼 Profesión / Estudios:** {f'[[{profession}]]' if profession and profession != 'No mencionada' else '*No mencionada*'}",
                 f"- **❤️ Intereses y Hobbies:** {', '.join([f'#{self._slugify(h)}' for h in hobbies]) if hobbies else '*Ninguno registrado*'}",
                 "",
@@ -98,6 +246,13 @@ class ObsidianVaultExporter:
                 body.append("- *Sin notas específicas registradas.*")
 
             body.extend([
+                "",
+                "## 📅 Planes y Eventos Agendados",
+                "```dataview",
+                f'TABLE fecha as "📆 Fecha", hora as "⏰ Hora", lugar as "📍 Lugar", google_calendar_status as "Google Status"',
+                f'FROM #evento WHERE contains(contacto, "[[{name}]]")',
+                f'SORT fecha ASC',
+                "```",
                 "",
                 "## 🤝 Compromisos y Tareas Pendientes",
                 "```dataview",
@@ -115,8 +270,17 @@ class ObsidianVaultExporter:
             contact_path.write_text(full_content, encoding="utf-8")
             exported_contacts.append(name)
 
-        # 2. Export Global Events and Commitments
+        # 2. Export Individual Event Notes with 1-Click Google Calendar links
         if events:
+            for ev in events:
+                try:
+                    c_name = participants[0].get("nombre") if participants else None
+                    self.export_event_note(ev, contact_name=c_name)
+                    exported_events += 1
+                except Exception as e:
+                    print(f"Error al exportar nota de evento: {e}")
+
+            # Also maintain global agenda file
             events_file = self.events_dir / "Compromisos_y_Eventos.md"
             events_lines = [
                 "---",
@@ -132,7 +296,6 @@ class ObsidianVaultExporter:
                 fecha = ev.get("fecha") or "Fecha sin especificar"
                 desc = ev.get("descripcion") or ""
                 events_lines.append(f"- [ ] **[[{fecha}]]:** {desc} #compromiso")
-                exported_events += 1
 
             events_file.write_text("\n".join(events_lines), encoding="utf-8")
 
@@ -157,13 +320,13 @@ tags: [dashboard, crm, whatsapp_hub]
 # 🧠 WhatsApp Intelligence CRM & Contact Hub
 
 > [!NOTE]
-> Base de datos de relaciones personales y compromisos sincronizada automáticamente con **AI-CLI Studio**.
+> Base de datos de relaciones personales y compromisos sincronizada automáticamente con **AI-CLI Studio** y **Qwen 3.6 35B A3B**.
 
 ## 👥 Directorio de Contactos
 ```dataview
 TABLE 
     cumpleanos as "🎂 Cumpleaños", 
-    ubicacion as "📍 Ubicación", 
+    ubicacion as "📍 Ubicación / Dirección", 
     profesion as "💼 Profesión", 
     total_notas as "📝 Notas"
 FROM #contacto
@@ -172,7 +335,21 @@ SORT file.name ASC
 
 ---
 
-## 📅 Próximos Eventos y Tareas Pendientes
+## 📅 Próximos Eventos y Salidas
+```dataview
+TABLE 
+    fecha as "📆 Fecha", 
+    hora as "⏰ Hora", 
+    contacto as "👥 Con Quién", 
+    lugar as "📍 Lugar", 
+    google_calendar_status as "Google Calendar"
+FROM #evento
+SORT fecha ASC
+```
+
+---
+
+## 🤝 Tareas y Acuerdos Pendientes
 ```dataview
 TASK
 FROM #compromiso
@@ -195,11 +372,14 @@ FROM #lugar
             return {"exists": False, "vault_path": str(self.vault_path), "contacts": 0}
 
         contacts = list(self.contacts_dir.glob("*.md")) if self.contacts_dir.exists() else []
+        events = list(self.events_dir.glob("*.md")) if self.events_dir.exists() else []
         return {
             "exists": True,
             "vault_path": str(self.vault_path),
             "contacts_count": len(contacts),
-            "contacts": [c.stem for c in contacts]
+            "contacts": [c.stem for c in contacts],
+            "events_count": len(events)
         }
+
 
 vault_exporter = ObsidianVaultExporter()
