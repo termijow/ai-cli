@@ -124,6 +124,13 @@ if [[ -z "$MODEL_PATH" ]]; then
 fi
 
 PORT=${PORT:-1234}
+
+# Liberar puerto o proceso anterior si está ocupado para evitar "couldn't bind HTTP server socket"
+if lsof -i :"$PORT" &>/dev/null || fuser "$PORT"/tcp &>/dev/null; then
+    echo -e "\033[1;33m⚠️  El puerto $PORT ya está en uso. Liberando proceso previo...\033[0m"
+    fuser -k -9 "$PORT"/tcp 2>/dev/null || true
+    sleep 0.5
+fi
 REASONING_FLAG=${AI_REASONING:-${PRESET_REASONING:-off}}
 THINKING_LEVEL=${AI_THINKING_LEVEL:-${PRESET_THINKING_LEVEL:-off}}
 
