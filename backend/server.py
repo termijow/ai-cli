@@ -170,6 +170,34 @@ class WhatsAppAnalyzeRequest(BaseModel):
     prompt_override: Optional[str] = Field(None, description="Optional custom extraction prompt")
 
 
+# --- Lifespan Context Manager ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 AI-CLI Backend starting up...")
+    logger.info(f"LLM Server Target: {LLAMA_URL}")
+    yield
+    logger.info("🛑 AI-CLI Backend shut down successfully.")
+
+
+# --- FastAPI Application ---
+
+app = FastAPI(
+    title="AI-CLI Backend API",
+    description="Unified Backend API for AI Document Processing, WhatsApp Analysis & LLM Services",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 # --- Authentication ---
 
 _AUTH_PASSWORD = os.environ.get("AI_AUTH_PASSWORD", "prisma2026")
@@ -178,7 +206,7 @@ _active_tokens: set = set()
 def _generate_token() -> str:
     return secrets.token_hex(32)
 
-@app.get("/api/auth/verify")
+@app.get("/api/auth/verify", tags=["Authentication"])
 async def verify_auth(request: Request):
     """Validate Bearer token or cookie for authentication."""
     auth_header = request.headers.get("Authorization", "")
@@ -216,33 +244,6 @@ async def login(request: Request):
 
     raise HTTPException(status_code=401, detail="Contraseña incorrecta")
 
-
-# --- Lifespan Context Manager ---
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("🚀 AI-CLI Backend starting up...")
-    logger.info(f"LLM Server Target: {LLAMA_URL}")
-    yield
-    logger.info("🛑 AI-CLI Backend shut down successfully.")
-
-
-# --- FastAPI Application ---
-
-app = FastAPI(
-    title="AI-CLI Backend API",
-    description="Unified Backend API for AI Document Processing, WhatsApp Analysis & LLM Services",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 # --- LLM Helper Functions ---
