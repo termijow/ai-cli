@@ -37,6 +37,10 @@ register_usage() {
 }
 
 show_stats() {
+    if [[ -f "$PROJECT_ROOT/bin/ai-sync-savings.py" ]]; then
+        python3 "$PROJECT_ROOT/bin/ai-sync-savings.py" --quiet 2>/dev/null || true
+    fi
+
     echo -e "\n\033[0;32m╭───────────────────────────────────────────────────────────╮\033[0m"
     echo -e "\033[0;32m│\033[0m \033[1;36m📊 MÉTRICAS HISTÓRICAS TOTALES (Claude Fable 5)\033[0m            \033[0;32m│\033[0m"
     echo -e "\033[0;32m├───────────────────────────────────────────────────────────┤\033[0m"

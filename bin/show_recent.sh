@@ -5,6 +5,11 @@ echo -e "\n\033[0;32m╭──────────────────�
 echo -e "\033[0;32m│\033[0m \033[1;36m📜 REGISTROS RECIENTES (Base de Datos)\033[0m                                   \033[0;32m│\033[0m"
 echo -e "\033[0;32m├─────────────────────────────────────────────────────────────────────────┤\033[0m"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/ai-sync-savings.py" ]]; then
+    python3 "$SCRIPT_DIR/ai-sync-savings.py" --quiet 2>/dev/null || true
+fi
+
 db="$HOME/.ai_cli_db.db"
 max_show=10
 count=1
@@ -20,7 +25,7 @@ if [[ -f "$db" ]]; then
     ORDER BY rowid DESC
     LIMIT $max_show;" | while IFS='|' read -r dt in_t out_t total_s; do
         [[ -z "$dt" ]] && continue
-        printf "\033[0;32m│\033[0m \033[1;33m%2d.\033[0m %-16s | %5s in / %5s out | \033[1;32mAcumulado: \$%-7s USD\033[0m \033[0;32m│\033[0m\n" \
+        printf "\033[0;32m│\033[0m \033[1;33m%2d.\033[0m %-16s | %6s in / %6s out | \033[1;32mAcumulado: \$%-7s USD\033[0m \033[0;32m│\033[0m\n" \
             "$count" "$dt" "$in_t" "$out_t" "$total_s"
         ((count++))
     done

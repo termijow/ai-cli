@@ -94,6 +94,7 @@ Cada modelo cuenta con su propio archivo `.conf` en la carpeta `presets/`:
 
 | Modelo | Preset Recomendado | Capas GPU | Contexto | Thinking / Reasoning | Velocidad Estimada (RX 6600) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Qwen3.5-0.8B** | Ultraligero Rápido | 99 (100% VRAM) | 32,768 | `high` / `off` | **120+ tok/s** ⚡ |
 | **Qwen3.5-4B** | Velocidad Máxima | 99 (100% VRAM) | 16,384 | `off` | **60-80 tok/s** 🚀 |
 | **Qwen3.5-9B** | Equilibrado Coding | 99 (100% VRAM) | 16,384 | `high` | **35-45 tok/s** ⚡ |
 | **Qwen3.8-27B** | Híbrido Inteligente | 35 capas | 8,192 | `low` | **18-25 tok/s** |

@@ -85,13 +85,21 @@ show_status() {
             echo -e "\033[0;34m│\033[0m 🎮 VRAM GPU (RX 6600):  \033[1;33m${u_gb} GB / ${t_gb} GB\033[0m"
         fi
     fi
+    sync_savings --quiet
     local total_savings="0.00"
     [[ -f "$HOME/.ai_cli_savings" ]] && total_savings=$(cat "$HOME/.ai_cli_savings" 2>/dev/null || echo "0.00")
     echo -e "\033[0;34m│\033[0m 💸 Ahorro vs Fable 5:  \033[1;32m\$${total_savings} USD\033[0m"
     echo -e "\033[0;34m╰───────────────────────────────────────────────────╯\033[0m\n"
 }
 
+sync_savings() {
+    if [[ -f "$PROJECT_ROOT/bin/ai-sync-savings.py" ]]; then
+        python3 "$PROJECT_ROOT/bin/ai-sync-savings.py" "$@" 2>/dev/null || true
+    fi
+}
+
 show_savings() {
+    sync_savings --quiet
     local savings_file="$HOME/.ai_cli_savings"
     local db_file="$HOME/.ai_cli_db.db"
     local total_savings="0.00"
@@ -369,6 +377,10 @@ case "$1" in
         ;;
     savings|saving|ahorro|ahorros)
         show_savings
+        ;;
+    sync|sync-savings|sync-qwen)
+        shift
+        sync_savings "$@"
         ;;
     *)
         # Ejecutar el núcleo de AI-CLI

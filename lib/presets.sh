@@ -37,7 +37,9 @@ find_preset_file() {
 
     # 3. Búsqueda por coincidencia de prefijo (heurística inteligente)
     local match=""
-    if [[ "$stem" =~ Qwen3\.5-4B|qwen.*4b ]]; then
+    if [[ "$stem" =~ Qwen3\.5-0\.8B|qwen.*0\.8b|qwen.*0_8b ]]; then
+        match=$(find "$PRESETS_DIR" -name "*Qwen3.5-0.8B*.conf" | head -n 1)
+    elif [[ "$stem" =~ Qwen3\.5-4B|qwen.*4b ]]; then
         match=$(find "$PRESETS_DIR" -name "*Qwen3.5-4B*.conf" | head -n 1)
     elif [[ "$stem" =~ Qwen3\.5-9B|qwen.*9b ]]; then
         match=$(find "$PRESETS_DIR" -name "*Qwen3.5-9B*.conf" | head -n 1)

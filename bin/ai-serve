@@ -164,8 +164,9 @@ echo -e "\033[0;36m│\033[0m 💭 \033[1mThinking:\033[0m   \033[0;32m$REASONIN
 echo -e "\033[0;36m│\033[0m 🌐 \033[1mEndpoint:\033[0m   \033[0;32mhttp://localhost:$PORT\033[0m"
 echo -e "\033[0;34m╰──────────────────────────────────────────────────────────╯\033[0m"
 
-# Configuración ROCm para RX 6600 (GPU 0)
-export HIP_VISIBLE_DEVICES=0
+# Configuración ROCm para RX 6600 dedicada (GPU 1, aislando la APU integrada)
+export HIP_VISIBLE_DEVICES=1
+export ROCR_VISIBLE_DEVICES=1
 export HSA_OVERRIDE_GFX_VERSION=10.3.0
 export HSA_NO_SCRATCH_REPLICATE=1
 export LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/hip/lib:$HOME/llama.cpp/build/bin:$LD_LIBRARY_PATH
