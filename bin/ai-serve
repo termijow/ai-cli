@@ -82,16 +82,9 @@ case "$AI_HARDWARE_MODE" in
 
         export GGML_HIPBLAS=1
 
-        # Detección inteligente: Si hay APU integrada + GPU dedicada (ej: Ryzen 5600G + RX 6600), aislar a GPU 1
-        AMD_DEVICE_COUNT=$(lspci 2>/dev/null | grep -iE 'vga|display|3d' | grep -ic 'AMD' || echo "1")
-        if [[ "$AMD_DEVICE_COUNT" -gt 1 ]]; then
-            export HIP_VISIBLE_DEVICES=1
-            export ROCR_VISIBLE_DEVICES=1
-        else
-            export HIP_VISIBLE_DEVICES=0
-            export ROCR_VISIBLE_DEVICES=0
-        fi
-
+        # En HIP, GPU 0 corresponde a Agent 2 (gfx1032 / AMD Radeon RX 6600)
+        export HIP_VISIBLE_DEVICES=0
+        export ROCR_VISIBLE_DEVICES=0
         export HSA_OVERRIDE_GFX_VERSION=10.3.0
         export HSA_NO_SCRATCH_REPLICATE=1
         export LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/hip/lib:$HOME/llama.cpp/build/bin:$LD_LIBRARY_PATH
