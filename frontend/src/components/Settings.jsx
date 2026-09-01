@@ -17,7 +17,7 @@ function Settings() {
   const [backendHealth, setBackendHealth] = useState(null);
   const [temperature, setTemperature] = useState(() => parseFloat(localStorage.getItem('ai_cli_temp') || '0.7'));
   const [maxTokens, setMaxTokens] = useState(() => parseInt(localStorage.getItem('ai_cli_max_tokens') || '40960'));
-  const [systemPrompt, setSystemPrompt] = useState(() => localStorage.getItem('ai_cli_sys_prompt') || 'Eres un asistente de IA inteligente, preciso, servicial y profesional.');
+  const [systemPrompt, setSystemPrompt] = useState(() => localStorage.getItem('ai_cli_sys_prompt') || 'Eres un asistente de redacción y edición académica profesional. Estructura siempre tus respuestas en formato Markdown (.md) riguroso (usando # para títulos principales, ## para secciones, ### para subsecciones/casos, tablas Markdown con | ... |, y viñetas claras con sangría), compatible con estándares y Normas APA 7.');
   const [testingPing, setTestingPing] = useState(false);
   const [pingResult, setPingResult] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
