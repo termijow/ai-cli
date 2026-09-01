@@ -1,5 +1,13 @@
-FROM python:3.12-slim
+# Stage 1: Build Frontend UI
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
 
+# Stage 2: Backend API & Static Hosting
+FROM python:3.12-slim
 WORKDIR /app
 
 COPY backend/pyproject.toml ./
@@ -15,8 +23,8 @@ RUN pip install --no-cache-dir \
     "reportlab>=4.0.0"
 
 COPY backend/ /app/backend/
-COPY frontend/dist/ /app/frontend/dist/
-WORKDIR /app/backend
+COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
+WORKDIR /app/backend
 EXPOSE 3094
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "3094", "--log-level", "info"]
