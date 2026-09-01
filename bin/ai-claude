@@ -13,12 +13,14 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
 fi
 
 PORT=${PORT:-1234}
-CTX_SIZE=${AI_CTX_SIZE:-65536}
 
 export ANTHROPIC_BASE_URL="http://127.0.0.1:${PORT}"
 export ANTHROPIC_AUTH_TOKEN="local"
 export ANTHROPIC_API_KEY=""
-export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$CTX_SIZE"
+
+# 82,000 tokens menos el buffer interno de 33,000 = dispara auto-compact exactamente a los 49,000 tokens
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS="82000"
+unset DISABLE_AUTO_COMPACT
 unset CLAUDE_CODE_AUTO_COMPACT_WINDOW
 
 # Verificar que el servidor esté corriendo

@@ -180,10 +180,10 @@ EXTRA_FLAGS=(
     --cache-type-v "$CACHE_TYPE_V"
     --context-shift
     --alias localmodel
-    --reasoning "$REASONING_FLAG"
-    --reasoning-budget "$REASONING_BUDGET"
-    --reasoning-format none
-    --predict 4096
+    --reasoning "$REASONING_FLAG" \
+    --reasoning-budget "$REASONING_BUDGET" \
+    --reasoning-format none \
+    --predict "${AI_MAX_TOKENS:-8192}" \
 )
 
 # 8. Ejecución directa de llama-server
