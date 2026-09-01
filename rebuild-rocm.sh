@@ -15,6 +15,7 @@ echo "Configurando CMake para ROCm (gfx1030)..."
 # La opción correcta es GGML_HIP=ON en versiones recientes
 cmake -S ~/llama.cpp -B ~/llama.cpp/build \
     -DGGML_HIP=ON \
+    -DLLAMA_BUILD_SERVER=ON \
     -DCMAKE_HIP_ARCHITECTURES=gfx1030 \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_PREFIX_PATH=/opt/rocm
