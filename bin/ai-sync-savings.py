@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-ai-sync-savings.py - Synchronize Qwen CLI & AI-CLI token usage and savings
-Automatically scans ~/.qwen/projects/*/chats/*.jsonl for completed/in-progress
-sessions, extracts token usage (main agent + subagents), calculates simulated savings
-against Claude Fable 5 pricing, and records them in SQLite (~/.ai_cli_db.db)
-and ~/.ai_cli_savings.
+ai-sync-savings.py - Synchronize Qwen CLI, Claude Code & AI-CLI token usage and savings
+Automatically scans ~/.qwen/projects/*/chats/*.jsonl and ~/.claude/projects/*/*.jsonl
+for completed/in-progress sessions, extracts token usage (main agent + subagents),
+calculates simulated savings against Claude Fable 5 pricing, and records them in
+SQLite (~/.ai_cli_db.db) and ~/.ai_cli_savings.
 """
 
 import argparse
@@ -25,6 +25,7 @@ SAVINGS_FILE = Path.home() / ".ai_cli_savings"
 HISTORY_DIR = Path.home() / ".ai_cli_history"
 HISTORY_FILE = HISTORY_DIR / "queries.jsonl"
 QWEN_PROJECTS_DIR = Path.home() / ".qwen" / "projects"
+CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 # Cutoff timestamp for baseline historical sessions (before today)
 BASELINE_CUTOFF = "2026-08-28T00:00:00Z"
@@ -76,10 +77,9 @@ def set_current_savings(amount: float):
     SAVINGS_FILE.write_text(f"{amount:.2f}\n")
 
 
-def parse_chat_session(jsonl_path: Path):
+def parse_qwen_chat_session(jsonl_path: Path):
     """
-    Parse a Qwen chat JSONL file and return (session_id, input_tokens, output_tokens, cached_tokens, last_timestamp).
-    Includes tokens from all api_response events (main agent and subagents).
+    Parse a Qwen chat JSONL file and return token usage.
     """
     session_id = jsonl_path.stem
     total_in = 0
@@ -105,11 +105,15 @@ def parse_chat_session(jsonl_path: Path):
                             last_timestamp = ts
                 except Exception:
                     continue
-    except Exception as e:
+    except Exception:
+        return None
+
+    if total_in == 0 and total_out == 0:
         return None
 
     return {
         "session_id": session_id,
+        "query_type": "qwen",
         "input_tokens": total_in,
         "output_tokens": total_out,
         "cached_tokens": total_cached,
@@ -118,17 +122,99 @@ def parse_chat_session(jsonl_path: Path):
     }
 
 
-def sync_qwen_sessions(quiet: bool = False, force_all: bool = False):
-    if not QWEN_PROJECTS_DIR.exists():
+def parse_claude_chat_session(jsonl_path: Path):
+    """
+    Parse a Claude Code session JSONL file and return token usage.
+    Deduplicates assistant events sharing the same message.id.
+    """
+    session_id = f"claude_{jsonl_path.stem}"
+    seen_msg_ids = set()
+    total_in = 0
+    total_out = 0
+    total_cached = 0
+    last_timestamp = None
+
+    try:
+        with open(jsonl_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if data.get("type") == "assistant":
+                        msg = data.get("message", {})
+                        mid = msg.get("id")
+                        if mid and mid in seen_msg_ids:
+                            continue
+                        if mid:
+                            seen_msg_ids.add(mid)
+
+                        usage = msg.get("usage", {})
+                        in_toks = usage.get("input_tokens", 0)
+                        cache_read = usage.get("cache_read_input_tokens", 0)
+                        cache_create = usage.get("cache_creation_input_tokens", 0)
+                        out_toks = usage.get("output_tokens", 0)
+
+                        total_in += (in_toks + cache_read + cache_create)
+                        total_out += out_toks
+                        total_cached += cache_read
+
+                        ts = data.get("timestamp")
+                        if ts:
+                            last_timestamp = ts
+                except Exception:
+                    continue
+    except Exception:
+        return None
+
+    if total_in == 0 and total_out == 0:
+        return None
+
+    return {
+        "session_id": session_id,
+        "query_type": "claude",
+        "input_tokens": total_in,
+        "output_tokens": total_out,
+        "cached_tokens": total_cached,
+        "last_timestamp": last_timestamp,
+        "path": str(jsonl_path)
+    }
+
+
+def sync_all_sessions(quiet: bool = False, force_all: bool = False):
+    all_sessions_info = []
+
+    # 1. Collect Qwen files
+    if QWEN_PROJECTS_DIR.exists():
+        qwen_files = [Path(p) for p in glob.glob(str(QWEN_PROJECTS_DIR / "*" / "chats" / "*.jsonl"))]
+        for f in qwen_files:
+            info = parse_qwen_chat_session(f)
+            if info:
+                info["mtime"] = f.stat().st_mtime if f.exists() else 0
+                all_sessions_info.append(info)
+
+    # 2. Collect Claude files
+    if CLAUDE_PROJECTS_DIR.exists():
+        claude_files = [Path(p) for p in glob.glob(str(CLAUDE_PROJECTS_DIR / "*" / "*.jsonl"))]
+        for f in claude_files:
+            info = parse_claude_chat_session(f)
+            if info:
+                info["mtime"] = f.stat().st_mtime if f.exists() else 0
+                all_sessions_info.append(info)
+
+    if not all_sessions_info:
         if not quiet:
-            print(f"Directorio de proyectos Qwen no encontrado: {QWEN_PROJECTS_DIR}")
+            print("No se encontraron sesiones de Qwen ni Claude para sincronizar.")
         return 0
+
+    # Sort all sessions by modification time
+    all_sessions_info.sort(key=lambda s: s.get("mtime", 0))
 
     with sqlite3.connect(str(DB_FILE)) as conn:
         init_db(conn)
         cursor = conn.cursor()
 
-        # Check if imported_sessions is completely empty (first run initialization)
         existing_imports = {}
         rows = cursor.execute("SELECT session_id, last_input_tokens, last_output_tokens, last_savings FROM imported_sessions").fetchall()
         is_first_run = (len(rows) == 0)
@@ -140,28 +226,19 @@ def sync_qwen_sessions(quiet: bool = False, force_all: bool = False):
                 "last_savings": row[3]
             }
 
-        chat_files = [Path(p) for p in glob.glob(str(QWEN_PROJECTS_DIR / "*" / "chats" / "*.jsonl"))]
-        
-        # Sort files by modification time so older sessions are processed first
-        chat_files.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0)
-
         current_total_savings = get_current_savings()
         synced_count = 0
         total_tokens_added = 0
         total_savings_added = 0.0
 
-        for chat_file in chat_files:
-            info = parse_chat_session(chat_file)
-            if not info:
-                continue
-
+        for info in all_sessions_info:
             session_id = info["session_id"]
             curr_in = info["input_tokens"]
             curr_out = info["output_tokens"]
             last_ts = info["last_timestamp"] or datetime.now(timezone.utc).isoformat()
+            query_type = info.get("query_type", "ai")
 
-            # If it's the first time seeding and not force_all:
-            # Baseline sessions prior to BASELINE_CUTOFF are marked as already accounted for
+            # First run historical baseline check
             if is_first_run and not force_all:
                 if last_ts < BASELINE_CUTOFF:
                     cursor.execute(
@@ -189,7 +266,7 @@ def sync_qwen_sessions(quiet: bool = False, force_all: bool = False):
 
             current_total_savings = round(current_total_savings + delta_saving, 2)
 
-            # Format local timestamp for SQLite & queries.jsonl
+            # Format local timestamp
             try:
                 dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00")).astimezone()
                 local_ts_str = dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -221,7 +298,7 @@ def sync_qwen_sessions(quiet: bool = False, force_all: bool = False):
             HISTORY_DIR.mkdir(parents=True, exist_ok=True)
             entry = {
                 "timestamp": local_ts_str,
-                "query_type": "qwen",
+                "query_type": query_type,
                 "session_id": session_id,
                 "prompt_tokens": delta_in,
                 "completion_tokens": delta_out,
@@ -239,8 +316,9 @@ def sync_qwen_sessions(quiet: bool = False, force_all: bool = False):
             total_savings_added += delta_saving
 
             if not quiet:
-                short_id = session_id[:8]
-                print(f"✨ Sincronizada sesión {short_id}... | +{delta_in:,} in / +{delta_out:,} out | +${delta_saving:.4f} USD")
+                short_id = session_id.replace("claude_", "")[:8]
+                tag = f"[{query_type.upper()}]"
+                print(f"✨ {tag} Sesión {short_id}... | +{delta_in:,} in / +{delta_out:,} out | +${delta_saving:.4f} USD")
 
         conn.commit()
 
@@ -250,18 +328,18 @@ def sync_qwen_sessions(quiet: bool = False, force_all: bool = False):
                 print(f"\n💰 Total Ahorrado actualizado: ${current_total_savings:.2f} USD (+${total_savings_added:.4f} USD)")
                 print(f"📊 Tokens nuevos registrados: {total_tokens_added:,} tokens en {synced_count} sesión(es).")
         elif not quiet:
-            print("✓ Alcancía al día: no hay nuevas consultas de Qwen pendientes por sincronizar.")
+            print("✓ Alcancía al día: no hay nuevas consultas pendientes por sincronizar.")
 
         return synced_count
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sincronizar uso y ahorro de Qwen con AI-CLI")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Modo silencioso (sin salida en consola si todo está bien)")
-    parser.add_argument("--force-all", action="store_true", help="Forzar reimportación de todas las sesiones históricas")
+    parser = argparse.ArgumentParser(description="Sincronizar uso y ahorro de Qwen y Claude Code con AI-CLI")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Modo silencioso")
+    parser.add_argument("--force-all", action="store_true", help="Forzar reimportación de todas las sesiones")
     args = parser.parse_args()
 
-    sync_qwen_sessions(quiet=args.quiet, force_all=args.force_all)
+    sync_all_sessions(quiet=args.quiet, force_all=args.force_all)
 
 
 if __name__ == "__main__":

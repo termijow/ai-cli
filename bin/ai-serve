@@ -173,7 +173,7 @@ echo -e "\033[0;34m╰───────────────────�
 
 EXTRA_FLAGS=(
     --jinja
-    --flash-attn on
+    --flash-attn auto
     --parallel 1
     --cache-ram 4096
     --cache-type-k "$CACHE_TYPE_K"

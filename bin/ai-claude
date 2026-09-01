@@ -1,0 +1,33 @@
+#!/bin/bash
+# ==============================================================================
+# AI-CLAUDE: Lanza Claude Code apuntando al servidor local (ai-serve)
+# ==============================================================================
+
+SCRIPT_PATH=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+
+# Cargar .env del proyecto
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    set -a; source "$PROJECT_ROOT/.env"; set +a
+fi
+
+PORT=${PORT:-1234}
+CTX_SIZE=${AI_CTX_SIZE:-65536}
+
+export ANTHROPIC_BASE_URL="http://127.0.0.1:${PORT}"
+export ANTHROPIC_AUTH_TOKEN="local"
+export ANTHROPIC_API_KEY=""
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$CTX_SIZE"
+unset CLAUDE_CODE_AUTO_COMPACT_WINDOW
+
+# Verificar que el servidor esté corriendo
+if ! curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
+    echo "⚠️  El servidor local no está corriendo en localhost:${PORT}"
+    echo "   Ejecuta 'ai-serve' primero en otra terminal."
+    echo ""
+    read -rp "¿Continuar de todas formas? (s/n): " ans
+    [[ "$ans" != "s" && "$ans" != "S" ]] && exit 1
+fi
+
+exec claude --local "$@"

@@ -265,6 +265,22 @@ handle_services() {
 }
 
 case "$1" in
+    claude)
+        shift
+        if [[ -f "$PROJECT_ROOT/bin/ai-claude" ]]; then
+            exec "$PROJECT_ROOT/bin/ai-claude" "$@"
+        else
+            exec claude --local "$@"
+        fi
+        ;;
+    qwen)
+        shift
+        if [[ -f "$PROJECT_ROOT/bin/ai-qwen" ]]; then
+            exec "$PROJECT_ROOT/bin/ai-qwen" "$@"
+        else
+            exec qwen "$@"
+        fi
+        ;;
     whatsapp|wa)
         shift
         if [[ -f "$PROJECT_ROOT/bin/ai-whatsapp" ]]; then
