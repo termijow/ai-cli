@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY pyproject.toml ./
+COPY backend/pyproject.toml ./
 RUN pip install --no-cache-dir \
     fastapi>=0.109.0 \
     "uvicorn[standard]>=0.27.0" \
@@ -14,7 +14,9 @@ RUN pip install --no-cache-dir \
     python-multipart>=0.0.9 \
     "reportlab>=4.0.0"
 
-COPY . .
+COPY backend/ /app/backend/
+COPY frontend/dist/ /app/frontend/dist/
+WORKDIR /app/backend
 
 EXPOSE 3094
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "3094", "--log-level", "info"]

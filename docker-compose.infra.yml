@@ -1,0 +1,24 @@
+services:
+  ai-services:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=3094
+      - AI_API_URL=http://host.docker.internal:1234/v1/chat/completions
+      - AI_AUTH_PASSWORD=${AI_AUTH_PASSWORD:-prisma2026}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - infra-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai-chat.rule=Host(`chat.localhost`) || Host(`chat.prismabitetesting.xyz`)"
+      - "traefik.http.services.ai-chat.loadbalancer.server.port=3094"
+      - "traefik.docker.network=infra-public"
+
+networks:
+  infra-public:
+    external: true

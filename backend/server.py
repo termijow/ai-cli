@@ -1922,7 +1922,12 @@ async def get_whatsapp_qr_image():
             status_code=404,
             detail="No hay código QR activo en este momento. La sesión de WhatsApp puede estar ya autenticada."
         )
-    return FileResponse(qr_path, media_type="image/png")
+# --- Mount Static Frontend Build (Single Port Serving) ---
+from fastapi.staticfiles import StaticFiles
+
+FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
 
 # --- Server Runner ---
@@ -1936,3 +1941,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
