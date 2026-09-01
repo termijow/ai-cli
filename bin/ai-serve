@@ -154,6 +154,7 @@ esac
 
 PRESET_DISPLAY_NAME="${PRESET_NAME:-Configuración Personalizada}"
 PRESET_DISPLAY_TOKS="${PRESET_ESTIMATED_TOKS:-Estimado Variable}"
+MAX_TOKENS="${AI_MAX_TOKENS:-${PRESET_MAX_TOKENS:-16384}}"
 
 # 7. Interfaz visual de inicio
 echo -e "\033[0;34m╭──────────────────────────────────────────────────────────╮\033[0m"
@@ -168,6 +169,7 @@ echo -e "\033[0;36m│\033[0m 🚀 \033[1mOffload:\033[0m    \033[0;32m$GPU_LAYE
 echo -e "\033[0;36m│\033[0m 💾 \033[1mKV Cache:\033[0m   \033[0;32mK: $CACHE_TYPE_K | V: $CACHE_TYPE_V\033[0m"
 echo -e "\033[0;36m│\033[0m 📦 \033[1mBatch:\033[0m      \033[0;32mBatch: $BATCH_SIZE | UBatch: $UBATCH_SIZE\033[0m"
 echo -e "\033[0;36m│\033[0m 💭 \033[1mThinking:\033[0m   \033[0;32m$REASONING_FLAG ($THINKING_LEVEL, budget: $REASONING_BUDGET)\033[0m"
+echo -e "\033[0;36m│\033[0m 📤 \033[1mMax Tokens:\033[0m \033[0;32m$MAX_TOKENS tokens (salida)\033[0m"
 echo -e "\033[0;36m│\033[0m 🌐 \033[1mEndpoint:\033[0m   \033[0;32mhttp://localhost:$PORT\033[0m"
 echo -e "\033[0;34m╰──────────────────────────────────────────────────────────╯\033[0m"
 
@@ -183,7 +185,7 @@ EXTRA_FLAGS=(
     --reasoning "$REASONING_FLAG" \
     --reasoning-budget "$REASONING_BUDGET" \
     --reasoning-format none \
-    --predict "${AI_MAX_TOKENS:-8192}" \
+    --predict "$MAX_TOKENS" \
 )
 
 # 8. Ejecución directa de llama-server

@@ -111,6 +111,7 @@ load_preset_vars() {
                 AI_CACHE_TYPE_K)       PRESET_CACHE_TYPE_K="$val" ;;
                 AI_CACHE_TYPE_V)       PRESET_CACHE_TYPE_V="$val" ;;
                 AI_THREADS)            PRESET_THREADS="$val" ;;
+                AI_MAX_TOKENS)          PRESET_MAX_TOKENS="$val" ;;
                 AI_ESTIMATED_TOKS)     PRESET_ESTIMATED_TOKS="$val" ;;
                 MODEL_REPO)            PRESET_MODEL_REPO="$val" ;;
             esac
