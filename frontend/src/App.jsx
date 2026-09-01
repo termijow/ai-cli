@@ -11,7 +11,11 @@ import {
   Cpu, 
   Activity, 
   ShieldCheck, 
-  Zap 
+  Zap,
+  Lock,
+  Key,
+  LogOut,
+  ArrowRight
 } from 'lucide-react';
 
 import DocumentEditor from './components/DocumentEditor';
@@ -25,6 +29,10 @@ function App() {
   const [activeTab, setActiveTab] = useState('documents');
   const [theme, setTheme] = useState(() => localStorage.getItem('ai_cli_theme') || 'dark');
   const [serverStatus, setServerStatus] = useState({ backend: false, llm: false, model: 'Qwen3.5' });
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('ai_auth_token') || '');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -35,7 +43,7 @@ function App() {
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const res = await fetch('http://localhost:3094/health');
+        const res = await fetch('/health');
         if (res.ok) {
           const data = await res.json();
           setServerStatus({
@@ -60,6 +68,42 @@ function App() {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
+  const handleLogin = async (e) => {
+    if (e) e.preventDefault();
+    if (!loginPassword.trim()) return;
+    setIsLoggingIn(true);
+    setLoginError('');
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: loginPassword })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) {
+          localStorage.setItem('ai_auth_token', data.token);
+          setAuthToken(data.token);
+          setLoginPassword('');
+        }
+      } else {
+        const err = await res.json().catch(() => ({ detail: 'Contraseña incorrecta' }));
+        setLoginError(err.detail || 'Contraseña incorrecta.');
+      }
+    } catch (err) {
+      setLoginError('No se pudo conectar con el servidor de autenticación.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('ai_auth_token');
+    setAuthToken('');
+  };
+
   const tabs = [
     { id: 'documents', label: 'Editor & Docs', icon: FileText, desc: 'Editor y asistente contextual de IA' },
     { id: 'whatsapp', label: 'WhatsApp Analyzer', icon: MessageSquare, desc: 'Extracción de perfiles e inteligencia' },
@@ -68,6 +112,117 @@ function App() {
     { id: 'extract', label: 'Extraer Datos', icon: Search, desc: 'Entidades, fechas y métricas JSON' },
     { id: 'settings', label: 'Sistema', icon: SettingsIcon, desc: 'Estado de hardware y parámetros' },
   ];
+
+  // Auth Gate Screen
+  if (!authToken) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'var(--bg-primary)',
+        padding: '20px'
+      }}>
+        <div style={{
+          maxWidth: '420px',
+          width: '100%',
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: '16px',
+          padding: '36px 32px',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            width: '56px',
+            height: '56px',
+            borderRadius: '14px',
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 20px',
+            color: '#fff',
+            boxShadow: '0 0 20px rgba(16, 185, 129, 0.4)'
+          }}>
+            <Lock size={28} />
+          </div>
+
+          <h2 style={{ margin: '0 0 8px', fontSize: '22px', fontWeight: '800', color: 'var(--text-primary)' }}>
+            AI-CLI Security Wall
+          </h2>
+          <p style={{ margin: '0 0 24px', fontSize: '13px', color: 'var(--text-muted)' }}>
+            Acceso restringido a inteligencia y base de datos privada.
+          </p>
+
+          <form onSubmit={handleLogin}>
+            <div style={{ position: 'relative', marginBottom: '16px' }}>
+              <Key size={18} style={{ position: 'absolute', left: '14px', top: '13px', color: 'var(--text-muted)' }} />
+              <input
+                type="password"
+                placeholder="Ingresa la Contraseña Maestra..."
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                autoFocus
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '12px 14px 12px 42px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-subtle)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '14px',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            {loginError && (
+              <div style={{
+                backgroundColor: 'rgba(244, 63, 94, 0.1)',
+                border: '1px solid rgba(244, 63, 94, 0.3)',
+                color: '#fb7185',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                marginBottom: '16px',
+                textAlign: 'left'
+              }}>
+                {loginError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn || !loginPassword.trim()}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '10px',
+                border: 'none',
+                backgroundColor: '#10b981',
+                color: '#fff',
+                fontWeight: '700',
+                fontSize: '14px',
+                cursor: isLoggingIn ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'background 0.2s',
+                opacity: isLoggingIn || !loginPassword.trim() ? 0.6 : 1
+              }}
+            >
+              <span>{isLoggingIn ? 'Verificando...' : 'Acceder al Sistema'}</span>
+              <ArrowRight size={16} />
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-primary)' }}>
@@ -168,6 +323,27 @@ function App() {
             }}
           >
             {theme === 'dark' ? <Sun size={17} style={{ color: '#fbbf24' }} /> : <Moon size={17} />}
+          </button>
+
+          {/* Logout Button */}
+          <button
+            onClick={handleLogout}
+            title="Cerrar Sesión"
+            style={{
+              backgroundColor: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-subtle)',
+              color: '#fb7185',
+              width: '36px',
+              height: '36px',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <LogOut size={16} />
           </button>
         </div>
       </header>

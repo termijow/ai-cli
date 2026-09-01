@@ -18,7 +18,7 @@ cmake -S ~/llama.cpp -B ~/llama.cpp/build \
     -DLLAMA_BUILD_SERVER=ON \
     -DLLAMA_BUILD_TESTS=OFF \
     -DLLAMA_BUILD_EXAMPLES=OFF \
-    -DCMAKE_HIP_ARCHITECTURES=gfx1030 \
+    -DCMAKE_HIP_ARCHITECTURES="gfx1032;gfx1030" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_PREFIX_PATH=/opt/rocm
 

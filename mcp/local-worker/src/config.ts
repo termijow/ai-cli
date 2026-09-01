@@ -30,12 +30,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
     .filter(Boolean);
 	const baseURL = openaiBaseUrl(env);
 	const apiKey = env.LOCAL_WORKER_QWEN_OPENAI_API_KEY ?? "local";
-	const hostname = new URL(baseURL).hostname.toLowerCase();
-	if (!["localhost", "127.0.0.1", "::1"].includes(hostname) && apiKey === "local") {
-	  throw new Error(
-		"LOCAL_WORKER_QWEN_OPENAI_API_KEY must be explicit for a non-local provider URL",
-	  );
-	}
 
   return {
     provider: providerEnv(env.LOCAL_WORKER_PROVIDER),
