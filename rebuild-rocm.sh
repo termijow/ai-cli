@@ -16,6 +16,8 @@ echo "Configurando CMake para ROCm (gfx1030)..."
 cmake -S ~/llama.cpp -B ~/llama.cpp/build \
     -DGGML_HIP=ON \
     -DLLAMA_BUILD_SERVER=ON \
+    -DLLAMA_BUILD_TESTS=OFF \
+    -DLLAMA_BUILD_EXAMPLES=OFF \
     -DCMAKE_HIP_ARCHITECTURES=gfx1030 \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_PREFIX_PATH=/opt/rocm
@@ -26,9 +28,9 @@ if ! grep -q "GGML_HIP:BOOL=ON" ~/llama.cpp/build/CMakeCache.txt; then
     exit 1
 fi
 
-# Compilación
-echo "Compilando llama.cpp..."
-cmake --build ~/llama.cpp/build --config Release -j$(nproc)
+# Compilación de targets específicos (evita errores en tests externos)
+echo "Compilando llama-server y llama-cli con aceleración ROCm..."
+cmake --build ~/llama.cpp/build --config Release -j$(nproc) --target llama-server llama-cli
 
 # Verificación
 echo "Verificando la compilación..."
