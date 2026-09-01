@@ -7,6 +7,7 @@ Document Generation (Word/PDF), and REST APIs for the AI-CLI Web UI.
 
 import io
 import os
+import secrets
 import sys
 import re
 import time
@@ -19,6 +20,7 @@ import xml.sax.saxutils as saxutils
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 from contextlib import asynccontextmanager
+from fastapi import Request
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -166,6 +168,53 @@ class PdfGenerationRequest(BaseModel):
 class WhatsAppAnalyzeRequest(BaseModel):
     chat_text: str = Field(..., description="Raw text exported from WhatsApp")
     prompt_override: Optional[str] = Field(None, description="Optional custom extraction prompt")
+
+
+# --- Authentication ---
+
+_AUTH_PASSWORD = os.environ.get("AI_AUTH_PASSWORD", "prisma2026")
+_active_tokens: set = set()
+
+def _generate_token() -> str:
+    return secrets.token_hex(32)
+
+@app.get("/api/auth/verify")
+async def verify_auth(request: Request):
+    """Validate Bearer token or cookie for authentication."""
+    auth_header = request.headers.get("Authorization", "")
+    token = None
+
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    else:
+        # Check for cookie-based token
+        cookies = request.cookies
+        for cookie_name, cookie_value in cookies.items():
+            if cookie_name.lower() == "auth_token" or cookie_name.lower() == "token":
+                token = cookie_value
+                break
+
+    if not token or token not in _active_tokens:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    return {"status": "ok", "authenticated": True}
+
+
+@app.post("/api/auth/login", tags=["Authentication"])
+async def login(request: Request):
+    """Authenticate with password and return a token."""
+    try:
+        body = await request.json()
+        password = body.get("password", "")
+    except Exception:
+        password = ""
+
+    if password == _AUTH_PASSWORD:
+        token = _generate_token()
+        _active_tokens.add(token)
+        return {"status": "ok", "token": token}
+
+    raise HTTPException(status_code=401, detail="Contraseña incorrecta")
 
 
 # --- Lifespan Context Manager ---
