@@ -12,6 +12,14 @@ import urllib.error
 import subprocess
 from pathlib import Path
 
+# Configurar encoding UTF-8 en terminales de Windows
+try:
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 # Configuración y Rutas
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent

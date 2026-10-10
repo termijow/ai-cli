@@ -2,8 +2,8 @@
 # ==============================================================================
 # AI-CLI ARENA WRAPPER
 # ==============================================================================
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
-PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+_ARENA_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+PROJECT_ROOT="$(cd -P "$_ARENA_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
 if [[ -f "$PROJECT_ROOT/lib/core.sh" ]]; then
     source "$PROJECT_ROOT/lib/core.sh"
@@ -12,4 +12,4 @@ else
     PY="python"
 fi
 
-exec "$PY" "$SCRIPT_DIR/ai-arena.py" "$@"
+exec "$PY" "$PROJECT_ROOT/bin/ai-arena.py" "$@"
