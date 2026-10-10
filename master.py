@@ -11,8 +11,16 @@ import time
 import signal
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 PROJECT_ROOT = Path(__file__).resolve().parent
-PYTHON_BIN = PROJECT_ROOT / "venv" / "bin" / "python"
+if sys.platform == "win32":
+    PYTHON_BIN = PROJECT_ROOT / "venv" / "Scripts" / "python.exe"
+else:
+    PYTHON_BIN = PROJECT_ROOT / "venv" / "bin" / "python"
 if not PYTHON_BIN.exists():
     PYTHON_BIN = Path(sys.executable)
 

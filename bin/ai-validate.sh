@@ -12,8 +12,10 @@ CYAN='\033[0;36m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+export PATH="$PROJECT_ROOT/bin:$PATH"
+[[ -f "$PROJECT_ROOT/.env" ]] && source "$PROJECT_ROOT/.env"
 
 echo -e "\n${BLUE}========================================${NC}"
 echo -e "${YELLOW}  🔍 Validando Entorno y Componentes AI-CLI${NC}"
@@ -46,9 +48,11 @@ done
 # 3. Presets por modelo
 echo -e "\n${GREEN}[3/7] Verificando repositorio de presets (presets/)...${NC}"
 if [[ -d "$PROJECT_ROOT/presets" ]]; then
-    P_COUNT=$(find "$PROJECT_ROOT/presets" -name "*.conf" | wc -l)
+    shopt -s nullglob
+    preset_files=("$PROJECT_ROOT/presets"/*.conf)
+    P_COUNT=${#preset_files[@]}
     echo -e "  ✓ Carpeta presets/ encontrada ($P_COUNT presets configurados)"
-    for pf in "$PROJECT_ROOT/presets"/*.conf; do
+    for pf in "${preset_files[@]}"; do
         [[ -f "$pf" ]] && echo -e "    ↳ $(basename "$pf")"
     done
 else
@@ -83,24 +87,37 @@ for cmd in jq curl git fzf sqlite3; do
     fi
 done
 
-# 6. Detección de GPU / ROCm
-echo -e "\n${GREEN}[6/7] Verificando aceleración GPU AMD ROCm...${NC}"
-if command -v rocm-smi &> /dev/null; then
+# 6. Detección de GPU / Hardware
+echo -e "\n${GREEN}[6/7] Verificando aceleración GPU...${NC}"
+LLAMA_FOUND=""
+for lp in "$PROJECT_ROOT/llama-bin/llama-server.exe" "$PROJECT_ROOT/llama-bin/llama-server" "${LLAMA_PATH:-}" "$HOME/llama.cpp/llama-server.exe" "$HOME/llama.cpp/build/bin/llama-server"; do
+    if [[ -n "$lp" && -f "$lp" ]]; then
+        LLAMA_FOUND="$lp"
+        break
+    fi
+done
+
+if [[ -n "$LLAMA_FOUND" ]]; then
+    dev_str=$("$LLAMA_FOUND" --list-devices 2>/dev/null | grep -iE "Vulkan|AMD|Radeon" | head -n 1 || true)
+    if [[ -n "$dev_str" ]]; then
+        echo -e "  ✓ Aceleración GPU detectada:"
+        echo -e "    ↳ $dev_str"
+    fi
+elif command -v rocm-smi &> /dev/null; then
     echo -e "  ✓ rocm-smi detectado"
     rocm-smi --showmeminfo vram 2>/dev/null | grep -E "VRAM Total Memory|VRAM Total Used Memory" | while read -r line; do
         echo -e "    ↳ $line"
     done || true
 else
-    echo -e "  ℹ️  rocm-smi no disponible (ejecución estándar)"
+    echo -e "  ℹ️  Aceleración estándar configurada"
 fi
 
 # 7. Verificación de llama-server
 echo -e "\n${GREEN}[7/7] Verificando binario llama-server...${NC}"
-LLAMA_BIN="$HOME/llama.cpp/build/bin/llama-server"
-if [[ -f "$LLAMA_BIN" && -x "$LLAMA_BIN" ]]; then
-    echo -e "  ✓ $LLAMA_BIN listo"
+if [[ -n "$LLAMA_FOUND" ]]; then
+    echo -e "  ✓ $LLAMA_FOUND listo"
 else
-    echo -e "  ⚠️  $LLAMA_BIN no encontrado"
+    echo -e "  ⚠️  llama-server no encontrado"
 fi
 
 echo -e "\n${GREEN}========================================${NC}"

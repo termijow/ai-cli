@@ -4,9 +4,8 @@
 # AI-CLI TUI DASHBOARD & CONTROL CENTER
 # ==============================================================================
 
-SCRIPT_PATH=$(readlink -f "$0")
-SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
-PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
 # 1. Localizar .env
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -34,9 +33,9 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 get_server_status() {
-    local pid=$(pgrep -f "llama-server" | head -n 1)
-    if [[ -n "$pid" ]]; then
-        echo -e "${GREEN}● ONLINE${NC} (PID: $pid)"
+    local port="${PORT:-1234}"
+    if curl -sf -m 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+        echo -e "${GREEN}● ONLINE${NC} (Port: $port)"
     else
         echo -e "${RED}○ OFFLINE${NC}"
     fi
@@ -83,8 +82,9 @@ manage_server_menu() {
     read -p "Elige una opción [1-5]: " s_opt
     case "$s_opt" in
         1)
-            if pgrep -f "llama-server" &>/dev/null; then
-                echo -e "${YELLOW}⚠️  El servidor ya está en ejecución.${NC}"
+            local port="${PORT:-1234}"
+            if curl -sf -m 1 "http://127.0.0.1:$port/health" &>/dev/null; then
+                echo -e "${YELLOW}⚠️  El servidor ya está en ejecución en el puerto $port.${NC}"
                 read -p "Presiona ENTER para continuar..."
             else
                 exec "$PROJECT_ROOT/bin/ai-serve"
@@ -92,6 +92,9 @@ manage_server_menu() {
             ;;
         2)
             echo -e "Deteniendo servidor..."
+            if command -v taskkill &>/dev/null; then
+                taskkill //F //IM "llama-server.exe" 2>/dev/null || true
+            fi
             pkill -f "llama-server" 2>/dev/null || true
             sleep 1
             echo -e "${GREEN}✓ Servidor detenido.${NC}"
@@ -99,6 +102,9 @@ manage_server_menu() {
             ;;
         3)
             echo -e "Reiniciando servidor..."
+            if command -v taskkill &>/dev/null; then
+                taskkill //F //IM "llama-server.exe" 2>/dev/null || true
+            fi
             pkill -f "llama-server" 2>/dev/null || true
             sleep 1
             exec "$PROJECT_ROOT/bin/ai-serve"

@@ -13,10 +13,13 @@ from pathlib import Path
 # Paths
 SCRIPT_PATH = Path(__file__).resolve()
 PROJECT_ROOT = SCRIPT_PATH.parent.parent
-VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python"
+if sys.platform == "win32":
+    VENV_PYTHON = PROJECT_ROOT / "venv" / "Scripts" / "python.exe"
+else:
+    VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python"
 
 # Re-exec with virtualenv python if not already running in it
-if VENV_PYTHON.exists() and sys.executable != str(VENV_PYTHON):
+if VENV_PYTHON.exists() and sys.executable.lower() != str(VENV_PYTHON).lower():
     os.execv(str(VENV_PYTHON), [str(VENV_PYTHON)] + sys.argv)
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))

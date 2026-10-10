@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# Detectar ubicación del script
-SCRIPT_PATH=$(readlink -f "$0")
-SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
-PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+# Detectar ubicación del script de forma portable
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
 # Localizar .env
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -19,6 +18,11 @@ else
 fi
 
 source "$ENV_FILE"
+
+# Cargar utilidades centrales
+if [[ -f "$PROJECT_ROOT/lib/core.sh" ]]; then
+    source "$PROJECT_ROOT/lib/core.sh"
+fi
 
 # --- Lógica de Comandos ---
 
@@ -65,23 +69,27 @@ install_model() {
 }
 
 show_status() {
-    local pid=$(pgrep -f "llama-server" | head -n 1)
+    local port="${PORT:-1234}"
+    local is_online=false
+    if curl -sf -m 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+        is_online=true
+    fi
     echo -e "\n\033[0;34m╭───────────────────────────────────────────────────╮\033[0m"
     echo -e "\033[0;34m│\033[0m \033[1;36m🔍 ESTADO DEL SISTEMA AI-CLI\033[0m                      \033[0;34m│\033[0m"
     echo -e "\033[0;34m├───────────────────────────────────────────────────┤\033[0m"
     echo -e "\033[0;34m│\033[0m 📦 Modelo Configurado: \033[1;32m$MODEL_FILE\033[0m"
-    if [[ -n "$pid" ]]; then
-        echo -e "\033[0;34m│\033[0m 🖥️  Servidor:           \033[1;32m● ONLINE (PID: $pid)\033[0m"
-        echo -e "\033[0;34m│\033[0m 🌐 Puerto:             \033[1;33m$PORT\033[0m"
+    if [[ "$is_online" == true ]]; then
+        echo -e "\033[0;34m│\033[0m 🖥️  Servidor:           \033[1;32m● ONLINE (Puerto: $port)\033[0m"
+        echo -e "\033[0;34m│\033[0m 🌐 Endpoint:           \033[1;33mhttp://127.0.0.1:$port\033[0m"
     else
-        echo -e "\033[0;34m│\033[0m 🖥️  Servidor:           \033[1;31m○ OFFLINE (Ejecuta 'ai-serve')\033[0m"
+        echo -e "\033[0;34m│\033[0m 🖥️  Servidor:           \033[1;31m○ OFFLINE (Ejecuta 'ai serve')\033[0m"
     fi
     if command -v rocm-smi &>/dev/null; then
         local vram_used=$(rocm-smi --showmeminfo vram 2>/dev/null | grep "VRAM Total Used Memory" | head -n 1 | awk '{print $NF}')
         local vram_total=$(rocm-smi --showmeminfo vram 2>/dev/null | grep "VRAM Total Memory" | head -n 1 | awk '{print $NF}')
         if [[ -n "$vram_used" && -n "$vram_total" ]]; then
-            local u_gb=$(awk "BEGIN {printf \"%.2f\", $vram_used / (1024*1024*1024)}")
-            local t_gb=$(awk "BEGIN {printf \"%.2f\", $vram_total / (1024*1024*1024)}")
+            local u_gb=$(calc_float "$vram_used / (1024*1024*1024)" "%.2f")
+            local t_gb=$(calc_float "$vram_total / (1024*1024*1024)" "%.2f")
             echo -e "\033[0;34m│\033[0m 🎮 VRAM GPU (RX 6600):  \033[1;33m${u_gb} GB / ${t_gb} GB\033[0m"
         fi
     fi
@@ -94,7 +102,8 @@ show_status() {
 
 sync_savings() {
     if [[ -f "$PROJECT_ROOT/bin/ai-sync-savings.py" ]]; then
-        python3 "$PROJECT_ROOT/bin/ai-sync-savings.py" "$@" 2>/dev/null || true
+        local py_cmd="${PYTHON_CMD:-python}"
+        "$py_cmd" "$PROJECT_ROOT/bin/ai-sync-savings.py" "$@" 2>/dev/null || true
     fi
 }
 
@@ -232,7 +241,7 @@ handle_services() {
             ;;
         status|check)
             if [[ -f "$PROJECT_ROOT/master.py" ]]; then
-                "$PROJECT_ROOT/master.py" status
+                "${PYTHON_CMD:-python}" "$PROJECT_ROOT/master.py" status
             else
                 show_status
             fi
@@ -250,7 +259,10 @@ handle_services() {
             if curl -s http://localhost:5174 | grep -q "AI-CLI"; then
                 port=5174
             fi
-            if command -v xdg-open &>/dev/null; then
+            if command -v cmd.exe &>/dev/null; then
+                cmd.exe /c start "" "http://localhost:$port" &>/dev/null
+                echo "🌐 Abriendo AI-CLI Studio en http://localhost:$port..."
+            elif command -v xdg-open &>/dev/null; then
                 xdg-open "http://localhost:$port" &>/dev/null &
                 echo "🌐 Abriendo AI-CLI Studio en http://localhost:$port..."
             fi
@@ -284,7 +296,10 @@ case "$1" in
     whatsapp|wa)
         shift
         if [[ -f "$PROJECT_ROOT/bin/ai-whatsapp" ]]; then
-            exec "$PROJECT_ROOT/venv/bin/python" "$PROJECT_ROOT/bin/ai-whatsapp" "$@"
+            local py_runner="$PROJECT_ROOT/venv/Scripts/python.exe"
+            [[ ! -f "$py_runner" ]] && py_runner="$PROJECT_ROOT/venv/bin/python"
+            [[ ! -f "$py_runner" ]] && py_runner="${PYTHON_CMD:-python}"
+            exec "$py_runner" "$PROJECT_ROOT/bin/ai-whatsapp" "$@"
         else
             echo "❌ No se encontró ai-whatsapp."
         fi
@@ -324,6 +339,10 @@ case "$1" in
         ;;
     stop)
         echo "🛑 Deteniendo servidores..."
+        if command -v taskkill &>/dev/null; then
+            taskkill //F //IM "llama-server.exe" 2>/dev/null || true
+            taskkill //F //IM "node.exe" 2>/dev/null || true
+        fi
         pkill -f "llama-server" 2>/dev/null || true
         pkill -f "uvicorn server:app" 2>/dev/null || true
         pkill -f "vite" 2>/dev/null || true
@@ -331,6 +350,9 @@ case "$1" in
         ;;
     restart)
         echo "🔄 Reiniciando servidor..."
+        if command -v taskkill &>/dev/null; then
+            taskkill //F //IM "llama-server.exe" 2>/dev/null || true
+        fi
         pkill -f "llama-server" 2>/dev/null || true
         sleep 1
         if [[ -f "$PROJECT_ROOT/bin/ai-serve" ]]; then
@@ -340,7 +362,7 @@ case "$1" in
     status)
         show_status
         if [[ -f "$PROJECT_ROOT/master.py" ]]; then
-            "$PROJECT_ROOT/master.py" status
+            "${PYTHON_CMD:-python}" "$PROJECT_ROOT/master.py" status
         fi
         ;;
     validate)

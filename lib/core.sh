@@ -5,10 +5,113 @@ set -e
 # AI-CLI CORE - V15.0 (Engineering Fixes)
 # ==============================================================================
 
-# Cargar configuración del .env
-SCRIPT_PATH=$(readlink -f "$0")
-SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
-PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+# Cargar configuración del .env de forma portable
+_CORE_SOURCE="${BASH_SOURCE[0]:-$0}"
+SCRIPT_DIR="$(cd -P "$(dirname "$_CORE_SOURCE")" >/dev/null 2>&1 && pwd -P)"
+PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+
+# Asegurar que el PATH de Bash contenga Python real y herramientas de sistema
+if [[ -d "/c/WINDOWS/system32" ]]; then
+    export PATH="/c/WINDOWS/system32:$PATH"
+elif [[ -d "/c/Windows/System32" ]]; then
+    export PATH="/c/Windows/System32:$PATH"
+fi
+
+if [[ -n "$LOCALAPPDATA" ]]; then
+    _WIN_LOCALAPP=$(cygpath -u "$LOCALAPPDATA" 2>/dev/null)
+    if [[ -d "$_WIN_LOCALAPP/Programs/Python/Python312" ]]; then
+        export PATH="$_WIN_LOCALAPP/Programs/Python/Python312:$_WIN_LOCALAPP/Programs/Python/Python312/Scripts:$PATH"
+    fi
+elif [[ -d "/c/Users/USUARIO/AppData/Local/Programs/Python/Python312" ]]; then
+    export PATH="/c/Users/USUARIO/AppData/Local/Programs/Python/Python312:/c/Users/USUARIO/AppData/Local/Programs/Python/Python312/Scripts:$PATH"
+fi
+
+# Localizar intérprete real de Python (evitando stubs de WindowsApps)
+get_python_cmd() {
+    if [[ -n "$AI_PYTHON_CMD" && -x "$AI_PYTHON_CMD" ]]; then
+        echo "$AI_PYTHON_CMD" && return 0
+    fi
+    if [[ -f "$PROJECT_ROOT/venv/Scripts/python.exe" ]]; then
+        echo "$PROJECT_ROOT/venv/Scripts/python.exe" && return 0
+    elif [[ -f "$PROJECT_ROOT/venv/bin/python" ]]; then
+        echo "$PROJECT_ROOT/venv/bin/python" && return 0
+    fi
+    if [[ -n "$LOCALAPPDATA" ]]; then
+        local win_py="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null)/Programs/Python/Python312/python.exe"
+        if [[ -f "$win_py" ]]; then
+            echo "$win_py" && return 0
+        fi
+    fi
+    if [[ -f "/c/Users/USUARIO/AppData/Local/Programs/Python/Python312/python.exe" ]]; then
+        echo "/c/Users/USUARIO/AppData/Local/Programs/Python/Python312/python.exe" && return 0
+    fi
+    if command -v py &>/dev/null; then
+        echo "py -3" && return 0
+    fi
+    if command -v python &>/dev/null && python -c "import sys" 2>/dev/null; then
+        echo "python" && return 0
+    fi
+    echo "python3"
+}
+PYTHON_CMD=$(get_python_cmd)
+
+# Polyfill transparente para jq si no está disponible o está bloqueado por AppLocker
+if ! command -v jq &>/dev/null || ! jq --version &>/dev/null 2>&1; then
+    jq() {
+        "$PYTHON_CMD" "$PROJECT_ROOT/bin/pyjq.py" "$@"
+    }
+fi
+
+# Wrapper de cálculo flotante robusto (sin dependencia estricta de awk)
+calc_float() {
+    local expr="$1"
+    local fmt="${2:-%.4f}"
+    if command -v awk &>/dev/null && awk 'BEGIN{}' 2>/dev/null; then
+        awk "BEGIN {printf \"$fmt\", $expr}"
+    else
+        "$PYTHON_CMD" -c "import sys; print(f'{$expr:$fmt[1:]}')" 2>/dev/null || echo "0.00"
+    fi
+}
+
+# Wrapper de base de datos SQLite transparente
+run_sqlite() {
+    local db_path="$1"
+    local sql_query="$2"
+    if command -v sqlite3 &>/dev/null; then
+        sqlite3 "$@"
+    else
+        "$PYTHON_CMD" -c "
+import sqlite3, sys
+db, query = sys.argv[1], sys.argv[2]
+try:
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    for row in cur.execute(query):
+        print('|'.join(str(x) for x in row))
+    conn.commit()
+    conn.close()
+except Exception:
+    sys.exit(0)
+" "$db_path" "$sql_query"
+    fi
+}
+
+# Wrapper de control de procesos multiplataforma
+kill_process_by_name() {
+    local proc="$1"
+    if command -v pkill &>/dev/null; then
+        pkill -f "$proc" 2>/dev/null || true
+    fi
+    if command -v taskkill &>/dev/null; then
+        taskkill //F //IM "${proc}.exe" 2>/dev/null || \
+        taskkill //F //IM "$proc" 2>/dev/null || true
+    fi
+}
+
+is_server_online() {
+    local port="${1:-$PORT}"
+    curl -sf -m 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1
+}
 
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
     ENV_FILE="$PROJECT_ROOT/.env"
@@ -38,9 +141,9 @@ draw_read_box() {
     echo -e "${BLUE}╰───────────────────────────────────────────╯${NC}"
 }
 
-log_info() { echo -e "✦ $1"; }
-log_success() { echo -e "${GREEN}✦ $1${NC}"; }
-log_warn() { echo -e "${YELLOW}✦ $1${NC}"; }
+log_info() { echo -e "✦ $1" >&2; }
+log_success() { echo -e "${GREEN}✦ $1${NC}" >&2; }
+log_warn() { echo -e "${YELLOW}✦ $1${NC}" >&2; }
 log_error() { echo -e "${RED}✦ ERROR: $1${NC}" >&2; }
 
 # 2. Gestión de Contexto Automático
@@ -59,7 +162,7 @@ get_auto_context() {
 
 # 3. Filtro de Output
 clean_markdown() {
-    echo "$1" | sed '/^```/d' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+    echo "$1" | sed '/<think>/,/<\/think>/d' | sed '/^```/d' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
 
 # 4. Motor del LLM (Robustez Crítica)
@@ -75,7 +178,8 @@ call_llm_robust() {
         --arg sys "$sys" \
         --arg user "$usr" \
         --argjson t "$temp" \
-        '{"messages": [{"role": "system", "content": $sys}, {"role": "user", "content": $user}], "temperature": $t}')
+        --argjson max "${AI_MAX_TOKENS:-2048}" \
+        '{"messages": [{"role": "system", "content": $sys}, {"role": "user", "content": $user}], "temperature": $t, "max_tokens": $max}')
 
     local tmp_res=$(mktemp)
     local http_code
@@ -100,9 +204,9 @@ call_llm_robust() {
     local prompt_tokens=$(jq -r '.usage.prompt_tokens // 0' "$tmp_res" 2>/dev/null)
     local completion_tokens=$(jq -r '.usage.completion_tokens // 0' "$tmp_res" 2>/dev/null)
 
-    local prompt_cost=$(awk "BEGIN {printf \"%.4f\", $prompt_tokens * 0.0000100}")
-    local output_cost=$(awk "BEGIN {printf \"%.4f\", $completion_tokens * 0.0000500}")
-    local total_saving=$(awk "BEGIN {printf \"%.4f\", ($prompt_tokens * 0.0000100) + ($completion_tokens * 0.0000500)}")
+    local prompt_cost=$(calc_float "$prompt_tokens * 0.0000100" "%.4f")
+    local output_cost=$(calc_float "$completion_tokens * 0.0000500" "%.4f")
+    local total_saving=$(calc_float "($prompt_tokens * 0.0000100) + ($completion_tokens * 0.0000500)" "%.4f")
     
     local savings_file="$HOME/.ai_cli_savings"
     if [[ ! -f "$savings_file" ]]; then
@@ -110,14 +214,14 @@ call_llm_robust() {
     fi
     local current_savings=$(cat "$savings_file" 2>/dev/null || echo "0.00")
     local new_savings
-    new_savings=$(awk "BEGIN {printf \"%.2f\", $current_savings + $total_saving}")
+    new_savings=$(calc_float "$current_savings + $total_saving" "%.2f")
     echo "$new_savings" > "$savings_file"
 
     # --- Actualización a la base de datos SQLite ---
     local db_file="$HOME/.ai_cli_db.db"
     if [[ -n "$db_file" && -f "$db_file" ]]; then
         # Insertar registro de uso en la base de datos
-        sqlite3 "$db_file" "INSERT INTO usage_logs (input_tokens, output_tokens, input_cost, output_savings, total_savings) 
+        run_sqlite "$db_file" "INSERT INTO usage_logs (input_tokens, output_tokens, input_cost, output_savings, total_savings) 
             VALUES ($prompt_tokens, $completion_tokens, $prompt_cost, $output_cost, $new_savings);" 2>/dev/null || true
     fi
 
@@ -194,7 +298,8 @@ apply_changes() {
         echo -e "✦ Cambios propuestos para ${BLUE}$path${NC}:"
         if ! diff --color=always -u "$path" "$tmp"; then
             read -p "✦ ¿Deseas aplicar estos cambios? (y/n): " confirm
-            if [[ "$confirm" == "y" ]]; then
+            confirm="${confirm%$'\r'}"
+            if [[ "$confirm" =~ ^[yYsS] ]]; then
                 mkdir -p "$BACKUP_DIR"
                 cp "$path" "$BACKUP_DIR/$(basename "$path").$(date +%s).bak"
                 mv "$tmp" "$path"
@@ -210,7 +315,8 @@ apply_changes() {
     else
         echo -e "✦ Detectado nuevo archivo: ${BLUE}$path${NC}"
         read -p "✦ ¿Confirmas la creación del archivo? (y/n): " confirm
-        if [[ "$confirm" == "y" ]]; then
+        confirm="${confirm%$'\r'}"
+        if [[ "$confirm" =~ ^[yYsS] ]]; then
             mkdir -p "$(dirname "$path")"
             mv "$tmp" "$path"
             log_success "¡Logrado! Archivo $path creado con éxito."
@@ -222,7 +328,7 @@ apply_changes() {
 }
 
 check_dependencies() {
-    for cmd in curl jq git diff npx; do
+    for cmd in curl jq git diff; do
         command -v $cmd &> /dev/null || { log_error "Falta dependencia: $cmd"; exit 1; }
     done
 }

@@ -4,10 +4,9 @@
 # AI-CLI SERVER MANAGER (llama.cpp ROCm/Vulkan/CPU Runner)
 # ==============================================================================
 
-# 1. Detectar ubicación y cargar configuración del .env
-SCRIPT_PATH=$(readlink -f "$0")
-SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
-PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+# 1. Detectar ubicación y cargar configuración del .env de forma portable
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
     ENV_FILE="$PROJECT_ROOT/.env"
@@ -32,9 +31,15 @@ set +a
 REAL_LLAMA_PATH=""
 SEARCH_PATHS=(
     "$LLAMA_PATH"
-    "$HOME/llama.cpp/build/bin/llama-server"
+    "$PROJECT_ROOT/llama-bin/llama-server.exe"
+    "$PROJECT_ROOT/llama-bin/llama-server"
+    "$HOME/llama.cpp/llama-server.exe"
     "$HOME/llama.cpp/llama-server"
+    "$HOME/llama.cpp/build/bin/llama-server"
+    "C:/Users/USUARIO/llama.cpp/llama-server.exe"
+    "C:/Users/USUARIO/Documents/ai-cli/llama-bin/llama-server.exe"
     "$(command -v llama-server 2>/dev/null)"
+    "$(command -v llama-server.exe 2>/dev/null)"
 )
 
 for path in "${SEARCH_PATHS[@]}"; do
@@ -59,9 +64,22 @@ if command -v find_preset_file &>/dev/null; then
 fi
 
 # 4. Configuración de Hilos Inteligente (Evita saturación del CPU)
-TOTAL_CORES=$(nproc)
-PHYSICAL_CORES=$(lscpu -p=CORE 2>/dev/null | grep -v '^#' | sort -u | wc -l)
-[[ -z "$PHYSICAL_CORES" || "$PHYSICAL_CORES" -eq 0 ]] && PHYSICAL_CORES=$(( TOTAL_CORES / 2 ))
+if command -v nproc &>/dev/null && nproc &>/dev/null; then
+    TOTAL_CORES=$(nproc)
+else
+    TOTAL_CORES=${NUMBER_OF_PROCESSORS:-6}
+fi
+
+PHYSICAL_CORES=""
+if command -v lscpu &>/dev/null && lscpu &>/dev/null; then
+    PHYSICAL_CORES=$(lscpu -p=CORE 2>/dev/null | grep -v '^#' | sort -u | wc -l)
+fi
+if [[ -z "$PHYSICAL_CORES" || "$PHYSICAL_CORES" -le 0 ]]; then
+    if command -v powershell.exe &>/dev/null; then
+        PHYSICAL_CORES=$(powershell.exe -NoProfile -Command "(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum" 2>/dev/null | tr -d '\r')
+    fi
+fi
+[[ -z "$PHYSICAL_CORES" || "$PHYSICAL_CORES" -le 0 ]] && PHYSICAL_CORES=$(( TOTAL_CORES / 2 ))
 if [[ "$PHYSICAL_CORES" -gt 2 ]]; then
     DEFAULT_THREADS=$(( PHYSICAL_CORES - 1 ))
 else
@@ -71,8 +89,24 @@ OPTIMIZED_THREADS=${AI_THREADS:-${PRESET_THREADS:-$DEFAULT_THREADS}}
 
 # 5. Switch de Configuración por Hardware & Presets
 AI_HARDWARE_MODE=${AI_HARDWARE_MODE:-AMD}
+GPU_DEVICE_ARGS=()
 
 case "$AI_HARDWARE_MODE" in
+    VULKAN)
+        echo "🔍 Verificando aceleración Vulkan..."
+        if ! "$REAL_LLAMA_PATH" --list-devices 2>&1 | grep -iqE "Vulkan|AMD|Radeon"; then
+            echo "❌ No se detectó dispositivo Vulkan. Revisa los controladores."
+            exit 1
+        fi
+
+        GPU_DEVICE_ARGS=(--device "Vulkan0")
+        GPU_LAYERS=${AI_GPU_LAYERS:-${PRESET_GPU_LAYERS:-999}}
+        CTX_SIZE=${AI_CTX_SIZE:-${PRESET_CTX_SIZE:-8192}}
+        BATCH_SIZE=${AI_BATCH_SIZE:-${PRESET_BATCH_SIZE:-512}}
+        UBATCH_SIZE=${AI_UBATCH_SIZE:-${PRESET_UBATCH_SIZE:-256}}
+        CACHE_TYPE_K=${AI_CACHE_TYPE_K:-${PRESET_CACHE_TYPE_K:-q4_0}}
+        CACHE_TYPE_V=${AI_CACHE_TYPE_V:-${PRESET_CACHE_TYPE_V:-q4_0}}
+        ;;
     AMD)
         echo "🔍 Verificando hardware AMD..."
         if ! rocminfo 2>/dev/null | grep 'Name:' | grep -qE 'gfx1030|gfx1032|RX 6600|Radeon'; then
@@ -122,22 +156,51 @@ esac
 
 # 6. Localizar Modelo en el sistema
 MODELS_DIR="$HOME/models"
-MODEL_PATH=$(find "$MODELS_DIR" "$HOME/.cache/huggingface" -name "$MODEL_FILE" 2>/dev/null | head -n 1)
+find_model() {
+    local m="$1"
+    local candidates=(
+        "$m"
+        "$PROJECT_ROOT/models/$m"
+        "$PROJECT_ROOT/models/"*"/$m"
+        "$HOME/models/$m"
+        "$HOME/models/"*"/$m"
+        "$MODELS_DIR/$m"
+        "$MODELS_DIR/"*"/$m"
+        "/c/Users/$USER/models/$m"
+        "$HOME/.cache/huggingface/hub/"*"/$m"
+    )
+    shopt -s nullglob
+    for cand in "${candidates[@]}"; do
+        if [[ -f "$cand" ]]; then
+            echo "$cand"
+            return 0
+        fi
+    done
+    return 1
+}
+
+MODEL_PATH=$(find_model "$MODEL_FILE")
 
 if [[ -z "$MODEL_PATH" ]]; then
-    echo -e "\033[0;31m❌ ERROR: No se encontró el archivo del modelo $MODEL_FILE en $MODELS_DIR\033[0m"
-    echo "💡 Puedes usar 'ai select' o 'ai models' para elegir un modelo existente."
+    echo -e "\033[0;31m❌ ERROR: No se encontró el archivo del modelo $MODEL_FILE\033[0m"
+    echo "💡 Puedes descargarlo en models/ o elegir uno existente con 'ai select' o 'ai models'."
     exit 1
 fi
 
 PORT=${PORT:-1234}
 
 # Liberar puerto o proceso anterior si está ocupado para evitar "couldn't bind HTTP server socket"
-if lsof -i :"$PORT" &>/dev/null || fuser "$PORT"/tcp &>/dev/null; then
-    echo -e "\033[1;33m⚠️  El puerto $PORT ya está en uso. Liberando proceso previo...\033[0m"
+if command -v fuser &>/dev/null; then
     fuser -k -9 "$PORT"/tcp 2>/dev/null || true
-    sleep 0.5
+elif command -v powershell.exe &>/dev/null; then
+    powershell.exe -NoProfile -Command "
+        Get-NetTCPConnection -LocalPort $PORT -ErrorAction SilentlyContinue |
+        ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }
+    " 2>/dev/null || true
+elif command -v taskkill &>/dev/null; then
+    taskkill //F //IM "llama-server.exe" 2>/dev/null || true
 fi
+sleep 0.5
 REASONING_FLAG=${AI_REASONING:-${PRESET_REASONING:-off}}
 THINKING_LEVEL=${AI_THINKING_LEVEL:-${PRESET_THINKING_LEVEL:-off}}
 
@@ -199,4 +262,5 @@ exec "$REAL_LLAMA_PATH" \
     --ctx-size "$CTX_SIZE" \
     --batch-size "$BATCH_SIZE" \
     --ubatch-size "$UBATCH_SIZE" \
+    "${GPU_DEVICE_ARGS[@]}" \
     "${EXTRA_FLAGS[@]}"

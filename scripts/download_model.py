@@ -49,7 +49,12 @@ def main():
         # Extract filename from URL
         clean_url = args.url.split("?")[0]
         filename = clean_url.split("/")[-1]
-        model_name = clean_url.split("/")[-3] if len(clean_url.split("/")) >= 3 else "models"
+        parts = clean_url.split("/")
+        if "resolve" in parts:
+            idx = parts.index("resolve")
+            model_name = parts[idx - 1] if idx > 0 else "models"
+        else:
+            model_name = parts[-3] if len(parts) >= 3 else "models"
         out_dir = PROJECT_ROOT / "models" / model_name
         out_path = out_dir / filename
 

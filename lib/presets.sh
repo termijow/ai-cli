@@ -3,10 +3,10 @@
 # AI-CLI PRESET MANAGER - Gestión y Carga de Presets por Modelo
 # ==============================================================================
 
-# Localizar directorio raíz
-_SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
-_LIB_DIR=$(dirname "$_SCRIPT_PATH")
-PROJECT_ROOT=$(dirname "$_LIB_DIR")
+# Localizar directorio raíz de forma portable
+_PRESETS_SOURCE="${BASH_SOURCE[0]:-$0}"
+_LIB_DIR="$(cd -P "$(dirname "$_PRESETS_SOURCE")" >/dev/null 2>&1 && pwd -P)"
+PROJECT_ROOT="$(cd -P "$_LIB_DIR/.." >/dev/null 2>&1 && pwd -P)"
 PRESETS_DIR="$PROJECT_ROOT/presets"
 
 mkdir -p "$PRESETS_DIR"
@@ -35,22 +35,23 @@ find_preset_file() {
         return 0
     fi
 
-    # 3. Búsqueda por coincidencia de prefijo (heurística inteligente)
+    # 3. Búsqueda por coincidencia de prefijo (heurística inteligente con globbing de Bash)
+    shopt -s nullglob
     local match=""
     if [[ "$stem" =~ Qwen3\.5-0\.8B|qwen.*0\.8b|qwen.*0_8b ]]; then
-        match=$(find "$PRESETS_DIR" -name "*Qwen3.5-0.8B*.conf" | head -n 1)
+        for f in "$PRESETS_DIR"/*Qwen3.5-0.8B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ Qwen3\.5-4B|qwen.*4b ]]; then
-        match=$(find "$PRESETS_DIR" -name "*Qwen3.5-4B*.conf" | head -n 1)
+        for f in "$PRESETS_DIR"/*Qwen3.5-4B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ Qwen3\.5-9B|qwen.*9b ]]; then
-        match=$(find "$PRESETS_DIR" -name "*Qwen3.5-9B*.conf" | head -n 1)
+        for f in "$PRESETS_DIR"/*Qwen3.5-9B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ Qwen3\.6-35B|qwen.*35b ]]; then
-        match=$(find "$PRESETS_DIR" -name "*Qwen3.6-35B*.conf" | head -n 1)
+        for f in "$PRESETS_DIR"/*Qwen3.6-35B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ Qwen3\.8-27B|qwen.*27b ]]; then
-        match=$(find "$PRESETS_DIR" -name "*Qwen3.8-27B*.conf" | head -n 1)
+        for f in "$PRESETS_DIR"/*Qwen3.8-27B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ gemma-4-E4B|gemma.*4b ]]; then
-        match=$(find "$PRESETS_DIR" -name "*gemma-4-E4B*.conf" | head -n 1)
+        for f in "$PRESETS_DIR"/*gemma-4-E4B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ gemma-4-E2B|gemma.*2b ]]; then
-        match=$(find "$PRESETS_DIR" -name "*gemma-4-E2B*.conf" | head -n 1)
+        for f in "$PRESETS_DIR"/*gemma-4-E2B*.conf; do match="$f"; break; done
     fi
 
     if [[ -n "$match" && -f "$match" ]]; then

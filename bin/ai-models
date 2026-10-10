@@ -4,9 +4,8 @@
 # AI-CLI MODEL SELECTOR & UI MANAGER
 # ==============================================================================
 
-SCRIPT_PATH=$(readlink -f "$0")
-SCRIPT_DIR=$(dirname "$SCRIPT_PATH")
-PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
 # 1. Localizar .env
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -41,20 +40,42 @@ CURRENT_GPU_LAYERS=$(grep "^AI_GPU_LAYERS=" "$ENV_FILE" 2>/dev/null | cut -d'=' 
 CURRENT_PORT=$(grep "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
 CURRENT_PORT=${CURRENT_PORT:-1234}
 
-# Obtener lista de modelos .gguf
-mapfile -t MODEL_FILES < <(find "$MODELS_DIR" -maxdepth 2 -name "*.gguf" -exec basename {} \; 2>/dev/null | sort -u)
+# Obtener lista de modelos .gguf de forma portable
+shopt -s nullglob
+raw_models=(
+    "$MODELS_DIR"/*.gguf
+    "$MODELS_DIR"/*/*.gguf
+    "$PROJECT_ROOT/models"/*.gguf
+    "$PROJECT_ROOT/models"/*/*.gguf
+    "/c/Users/$USER/models"/*.gguf
+    "/c/Users/$USER/models"/*/*.gguf
+)
+MODEL_FILES=()
+for mf in "${raw_models[@]}"; do
+    MODEL_FILES+=("$(basename "$mf")")
+done
+mapfile -t MODEL_FILES < <(printf "%s\n" "${MODEL_FILES[@]}" | sort -u)
 
 if [[ ${#MODEL_FILES[@]} -eq 0 ]]; then
-    echo -e "${RED}❌ No se encontraron modelos .gguf en $MODELS_DIR${NC}"
-    echo -e "${YELLOW}💡 Puedes descargar uno con: ai install-model <URL>${NC}"
+    echo -e "${RED}❌ No se encontraron modelos .gguf en $MODELS_DIR ni en $PROJECT_ROOT/models${NC}"
+    echo -e "${YELLOW}💡 Puedes descargar uno con:${NC}"
+    echo -e "   python scripts/download_model.py"
+    echo -e "   o con: ai install-model <URL_DEL_MODELO_GGUF>"
     exit 1
 fi
 
 # Función para estimar capas y memoria según modelo
 get_model_recommendations() {
     local model="$1"
-    local size_bytes=$(stat -c%s "$MODELS_DIR/$model" 2>/dev/null || echo 0)
-    local size_gb=$(awk "BEGIN {printf \"%.2f\", $size_bytes / (1024*1024*1024)}")
+    local target_file=""
+    for f in "$MODELS_DIR/$model" "$MODELS_DIR"/*/"$model" "$PROJECT_ROOT/models/$model" "$PROJECT_ROOT/models"/*/"$model" "/c/Users/$USER/models/$model" "/c/Users/$USER/models"/*/"$model"; do
+        [[ -f "$f" ]] && { target_file="$f"; break; }
+    done
+
+    local size_bytes=0
+    [[ -n "$target_file" ]] && size_bytes=$(wc -c < "$target_file" 2>/dev/null || echo 0)
+    local size_mb=$(( size_bytes / 1048576 ))
+    local size_gb=$(printf "%d.%02d" $(( size_mb / 1024 )) $(( (size_mb % 1024) * 100 / 1024 )))
     
     local rec_layers=35
     local rec_desc=""
@@ -75,23 +96,17 @@ get_model_recommendations() {
         return 0
     fi
 
-    # Comparación con awk puro (sin bc)
-    local tier
-    tier=$(awk -v gb="$size_gb" 'BEGIN {
-        if (gb+0 <= 3.5)       print "1"
-        else if (gb+0 <= 7.0)  print "2"
-        else if (gb+0 <= 11.0) print "3"
-        else if (gb+0 <= 16.0) print "4"
-        else                   print "5"
-    }')
-
-    case "$tier" in
-        1) rec_layers=99 ; fit_status="🟢 100% en GPU VRAM (Ultra Rápido)"            ; rec_desc="Excelente para chat diario y respuestas instantáneas." ;;
-        2) rec_layers=99 ; fit_status="🟢 100% en GPU VRAM (Rápido)"                  ; rec_desc="Ideal para programación, razonamiento y bajo uso de RAM." ;;
-        3) rec_layers=40 ; fit_status="🟡 GPU Offload Híbrido (~7GB VRAM + ~1.5GB RAM)" ; rec_desc="Alta inteligencia/coding con offload balanceado." ;;
-        4) rec_layers=25 ; fit_status="🟠 GPU Offload Híbrido (~4.5GB VRAM + ~8GB RAM)" ; rec_desc="Modelo grande. Requiere RAM del sistema." ;;
-        5) rec_layers=15 ; fit_status="🔴 Principalmente en RAM (~3.5GB VRAM + RAM alta)" ; rec_desc="Modelo muy pesado. Generación lenta." ;;
-    esac
+    if (( size_mb <= 3500 )); then
+        rec_layers=99 ; fit_status="🟢 100% en GPU VRAM (Ultra Rápido)"            ; rec_desc="Excelente para chat diario y respuestas instantáneas."
+    elif (( size_mb <= 7000 )); then
+        rec_layers=99 ; fit_status="🟢 100% en GPU VRAM (Rápido)"                  ; rec_desc="Ideal para programación, razonamiento y bajo uso de RAM."
+    elif (( size_mb <= 11000 )); then
+        rec_layers=40 ; fit_status="🟡 GPU Offload Híbrido (~7GB VRAM + ~1.5GB RAM)" ; rec_desc="Alta inteligencia/coding con offload balanceado."
+    elif (( size_mb <= 16000 )); then
+        rec_layers=25 ; fit_status="🟠 GPU Offload Híbrido (~4.5GB VRAM + ~8GB RAM)" ; rec_desc="Modelo grande. Requiere RAM del sistema."
+    else
+        rec_layers=15 ; fit_status="🔴 Principalmente en RAM (~3.5GB VRAM + RAM alta)" ; rec_desc="Modelo muy pesado. Generación lenta."
+    fi
 
     echo "$size_gb|$rec_layers|$fit_status|$rec_desc"
 }
@@ -184,7 +199,7 @@ select_with_menu() {
 
 # Ejecución de selección
 SELECTED_MODEL=""
-if command -v fzf &>/dev/null; then
+if command -v fzf &>/dev/null && fzf --version &>/dev/null; then
     SELECTED_MODEL=$(select_with_fzf)
 else
     SELECTED_MODEL=$(select_with_menu)
@@ -238,11 +253,14 @@ CURRENT_CTX=${DEFAULT_CTX:-${CURRENT_CTX:-4096}}
 if [[ "$SELECTED_MODEL" =~ 35B-A3B|[Aa]3[Bb] ]]; then
     CTX_TIER="moe_a3b"
 else
-    CTX_TIER=$(awk -v gb="$REC_SIZE" 'BEGIN {
-        if      (gb+0 <= 7.0)  print "small"   # 9B y menores → 40k OK
-        else if (gb+0 <= 11.0) print "medium"  # 27B → máx ~16k seguro
-        else                   print "large"   # 35B+ → máx 8k seguro
-    }')
+    _rec_int="${REC_SIZE%%.*}"
+    if (( ${_rec_int:-0} <= 7 )); then
+        CTX_TIER="small"   # 9B y menores → 40k OK
+    elif (( ${_rec_int:-0} <= 11 )); then
+        CTX_TIER="medium"  # 27B → máx ~16k seguro
+    else
+        CTX_TIER="large"   # 35B+ → máx 8k seguro
+    fi
 fi
 
 echo -e "\n${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
@@ -409,7 +427,7 @@ if command -v save_model_preset &>/dev/null; then
         BATCH=2048
         UBATCH=512
         EST_SPEED="12-15 tok/s"
-    elif (( $(echo "$REC_SIZE <= 7.0" | awk '{print ($1)?1:0}') )); then
+    elif (( ${_rec_int:-0} <= 7 )); then
         KV_CACHE="f16"
         BATCH=2048
         UBATCH=512
@@ -432,6 +450,9 @@ restart_opt=${restart_opt:-s}
 
 if [[ "$restart_opt" =~ ^[sSyY]$ ]]; then
     echo -e "\n✦ Deteniendo servidor anterior..."
+    if command -v taskkill &>/dev/null; then
+        taskkill //F //IM "llama-server.exe" 2>/dev/null || true
+    fi
     pkill -f "llama-server" 2>/dev/null || true
     sleep 1
     
