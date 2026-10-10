@@ -172,10 +172,10 @@ select_with_fzf() {
 
 # Menú interactivo básico si no hay fzf
 select_with_menu() {
-    clear
-    echo -e "${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${BLUE}│${NC} ${YELLOW}🤖 SELECTOR DE MODELOS LOCALES AI-CLI${NC}                 ${BLUE}│${NC}"
-    echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${NC}"
+    clear >&2 2>/dev/null || true
+    echo -e "${BLUE}╭──────────────────────────────────────────────────────────╮${NC}" >&2
+    echo -e "${BLUE}│${NC} ${YELLOW}🤖 SELECTOR DE MODELOS LOCALES AI-CLI${NC}                 ${BLUE}│${NC}" >&2
+    echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${NC}" >&2
     
     local i=1
     for m in "${MODEL_FILES[@]}"; do
@@ -185,14 +185,15 @@ select_with_menu() {
         local active_tag=""
         [[ "$m" == "$CURRENT_MODEL" ]] && active_tag=" ${GREEN}[ACTIVO]${NC}"
         
-        printf "${BLUE}│${NC} ${BOLD}%2d)${NC} %-40s %5s GB%b\n" "$i" "$m" "$sz" "$active_tag"
-        printf "${BLUE}│${NC}     ↳ %b\n" "$status"
+        printf "${BLUE}│${NC} ${BOLD}%2d)${NC} %-40s %5s GB%b\n" "$i" "$m" "$sz" "$active_tag" >&2
+        printf "${BLUE}│${NC}     ↳ %b\n" "$status" >&2
         ((i++))
     done
-    echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+    echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}" >&2
     
-    echo -e "\nElige el número de modelo [1-$((i-1))] (o 'q' para salir): "
+    echo -e "\nElige el número de modelo [1-$((i-1))] (o 'q' para salir): " >&2
     read -p "Opción: " opt
+    opt="${opt%$'\r'}"
     
     if [[ "$opt" =~ ^[0-9]+$ ]] && (( opt >= 1 && opt < i )); then
         echo "${MODEL_FILES[$((opt-1))]}"
@@ -247,6 +248,7 @@ fi
 echo -e "\n${GREEN}✔ Modelo seleccionado:${NC} ${BOLD}$SELECTED_MODEL${NC} ($REC_SIZE GB)\n✦ Recomendación para tu RX 6600 (8GB): ${BOLD}$DEFAULT_LAYERS capas en GPU${NC}\n✦ $REC_STATUS"
 
 read -p "✦ ¿Cuántas capas en GPU deseas asignar? [$DEFAULT_LAYERS]: " custom_layers
+custom_layers="${custom_layers%$'\r'}"
 GPU_LAYERS=${custom_layers:-$DEFAULT_LAYERS}
 
 # --- Selector de Contexto ---
@@ -450,9 +452,10 @@ echo -e "\n${GREEN}✅ Configuración guardada en .env y sincronizada en presets
 # Preguntar si reiniciar el servidor
 echo -e "\n${YELLOW}¿Deseas reiniciar 'ai-serve' ahora con el nuevo modelo? (s/n)${NC}"
 read -p "Opción [s]: " restart_opt
+restart_opt="${restart_opt%$'\r'}"
 restart_opt=${restart_opt:-s}
 
-if [[ "$restart_opt" =~ ^[sSyY]$ ]]; then
+if [[ "$restart_opt" =~ ^[sSyY] ]]; then
     echo -e "\n✦ Deteniendo servidor anterior..."
     if command -v taskkill &>/dev/null; then
         taskkill //F //IM "llama-server.exe" 2>/dev/null || true
