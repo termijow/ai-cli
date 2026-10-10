@@ -170,7 +170,7 @@ def start_server_for_model(model_path):
         "--alias", "localmodel",
         "--reasoning", "on",
         "--reasoning-budget", str(STANDARD_THINKING_BUDGET),
-        "--reasoning-format", "none",
+        "--reasoning-format", "deepseek",
         "--predict", str(STANDARD_MAX_TOKENS)
     ]
 
@@ -188,6 +188,116 @@ def start_server_for_model(model_path):
     if not wait_for_server(port=1234, timeout=40):
         return False, "El servidor no respondió a tiempo."
     return True, preset
+
+class ArenaStreamer:
+    """Maneja el streaming en tiempo real en la consola distinguiendo razonamiento y código."""
+    def __init__(self):
+        self.state = "idle"  # "idle", "thought", "code"
+        self.accumulated_thought = []
+        self.accumulated_content = []
+        self.raw_buffer = ""
+        self.completion_tokens = 0
+
+    def process_delta(self, delta):
+        thought = delta.get("reasoning_content") or delta.get("thought")
+        content = delta.get("content", "")
+
+        # 1. Razonamiento nativo separado por llama-server
+        if thought:
+            self.completion_tokens += 1
+            if self.state != "thought":
+                self.state = "thought"
+                print(f"\n\n{c_yellow('🧠 [Razonamiento / Thinking]:')}\n\033[0;33m", end="", flush=True)
+            self.accumulated_thought.append(thought)
+            sys.stdout.write(thought)
+            sys.stdout.flush()
+
+        # 2. Contenido regular o tags de pensamiento embebidos
+        if content:
+            self.completion_tokens += 1
+            text = self.raw_buffer + content
+            self.raw_buffer = ""
+
+            while text:
+                if self.state != "thought":
+                    pos_think = text.find("<think>")
+                    pos_thought = text.find("<thought>")
+                    candidates = [p for p in [pos_think, pos_thought] if p != -1]
+                    if candidates:
+                        pos = min(candidates)
+                        tag = "<think>" if pos == pos_think else "<thought>"
+                        before = text[:pos]
+                        if before:
+                            self._write_code(before)
+                        self.state = "thought"
+                        print(f"\n\n{c_yellow('🧠 [Razonamiento / Thinking]:')}\n\033[0;33m", end="", flush=True)
+                        text = text[pos + len(tag):]
+                        continue
+                    else:
+                        prefixes = ("<thought", "<thoug", "<thou", "<tho", "<think", "<thin", "<thi", "<th", "<t", "<")
+                        matched_p = None
+                        for p in prefixes:
+                            if text.endswith(p):
+                                matched_p = p
+                                break
+                        if matched_p:
+                            self.raw_buffer = matched_p
+                            text = text[:-len(matched_p)]
+                        if text:
+                            self._write_code(text)
+                            text = ""
+                else:
+                    pos_close_think = text.find("</think>")
+                    pos_close_thought = text.find("</thought>")
+                    candidates = [p for p in [pos_close_think, pos_close_thought] if p != -1]
+                    if candidates:
+                        pos = min(candidates)
+                        tag = "</think>" if pos == pos_close_think else "</thought>"
+                        before = text[:pos]
+                        if before:
+                            self._write_thought(before)
+                        self.state = "code"
+                        print(f"\033[0m\n\n{c_green('💻 [Generando Código / Snake Game]:')}\n\033[0;32m", end="", flush=True)
+                        text = text[pos + len(tag):]
+                        continue
+                    else:
+                        prefixes = ("</thought", "</thoug", "</thou", "</tho", "</think", "</thin", "</thi", "</th", "</t", "</")
+                        matched_p = None
+                        for p in prefixes:
+                            if text.endswith(p):
+                                matched_p = p
+                                break
+                        if matched_p:
+                            self.raw_buffer = matched_p
+                            text = text[:-len(matched_p)]
+                        if text:
+                            self._write_thought(text)
+                            text = ""
+
+    def _write_thought(self, text):
+        if not text: return
+        self.accumulated_thought.append(text)
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    def _write_code(self, text):
+        if not text: return
+        self.accumulated_content.append(text)
+        if self.state != "code":
+            self.state = "code"
+            print(f"\033[0m\n\n{c_green('💻 [Generando Código / Snake Game]:')}\n\033[0;32m", end="", flush=True)
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    def close(self):
+        if self.raw_buffer:
+            if self.state == "thought":
+                self._write_thought(self.raw_buffer)
+            else:
+                self._write_code(self.raw_buffer)
+            self.raw_buffer = ""
+        sys.stdout.write("\033[0m\n")
+        sys.stdout.flush()
 
 def evaluate_code(code_str):
     score = 0
@@ -255,13 +365,9 @@ def run_benchmark_on_model(model_path):
 
     t0 = time.time()
     first_token_time = None
-    accumulated_content = []
-    accumulated_thought = []
-    in_thought = False
-    prompt_tokens = 0
-    completion_tokens = 0
+    streamer = ArenaStreamer()
 
-    print(c_yellow("\n✦ Generando respuesta en streaming..."))
+    print(c_cyan("\n✦ Generando respuesta en tiempo real (streaming activo):"))
     try:
         with urllib.request.urlopen(req, timeout=600) as resp:
             for raw_line in resp:
@@ -274,38 +380,35 @@ def run_benchmark_on_model(model_path):
                     choice = chunk.get("choices", [{}])[0]
                     delta = choice.get("delta", {})
                     
-                    if first_token_time is None:
+                    if first_token_time is None and (delta.get("content") or delta.get("reasoning_content") or delta.get("thought")):
                         first_token_time = time.time()
-                    
-                    # Detectar pensamiento vs contenido
-                    thought = delta.get("reasoning_content") or delta.get("thought")
-                    content = delta.get("content", "")
 
-                    if thought:
-                        accumulated_thought.append(thought)
-                        print(colorize(".", "0;33"), end="", flush=True)
-                    elif content:
-                        accumulated_content.append(content)
-                        print(colorize(".", "0;32"), end="", flush=True)
-
-                    completion_tokens += 1
+                    streamer.process_delta(delta)
                 except Exception:
                     continue
 
+        streamer.close()
+
     except Exception as e:
+        streamer.close()
         print(c_red(f"\n❌ Error durante streaming: {e}"))
+        kill_server()
         return None
 
     t_total = time.time() - t0
     ttft = (first_token_time - t0) if first_token_time else 0.0
+    completion_tokens = streamer.completion_tokens
     tok_sec = completion_tokens / t_total if t_total > 0 else 0.0
 
     print(f"\n\n{c_green('✓ Generación completada con éxito!')}")
     print(f"⏱ Tiempo total: {t_total:.2f} s | TTFT: {ttft:.2f} s")
     print(f"⚡ Velocidad media: {c_bold(f'{tok_sec:.2f} tok/s')}")
-    print(f"📊 Tokens generados: {completion_tokens} (Pensamiento: {len(accumulated_thought)} | Código: {len(accumulated_content)})")
+    print(f"📊 Tokens generados: {completion_tokens} (Pensamiento: {len(streamer.accumulated_thought)} | Código: {len(streamer.accumulated_content)})")
 
-    full_output = "".join(accumulated_content)
+    full_output = "".join(streamer.accumulated_content)
+    if not full_output.strip() and streamer.accumulated_thought:
+        full_output = "".join(streamer.accumulated_thought)
+
     # Extraer bloque HTML
     match = re.search(r"```(?:html)?\s*(<!DOCTYPE html[\s\S]*?|<html[\s\S]*?)```", full_output, re.IGNORECASE)
     if match:
@@ -329,6 +432,9 @@ def run_benchmark_on_model(model_path):
     print(f"🏆 Puntuación de Calidad: {c_yellow(f'{score}/100')}")
     for d in details:
         print(f"   ├─ {d}")
+
+    # Liberar memoria de GPU antes de retornar
+    kill_server()
 
     return {
         "model": model_name,
