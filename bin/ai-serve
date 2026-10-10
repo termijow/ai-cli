@@ -103,6 +103,25 @@ AI_HARDWARE_MODE=${AI_HARDWARE_MODE:-AMD}
 GPU_DEVICE_ARGS=()
 
 case "$AI_HARDWARE_MODE" in
+    CUDA|NVIDIA)
+        echo "🔍 Verificando aceleración NVIDIA CUDA..."
+        if command -v nvidia-smi &>/dev/null; then
+            _nv_gpu=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1 || true)
+            [[ -n "$_nv_gpu" ]] && echo -e "✦ GPU NVIDIA detectada: \033[1;32m$_nv_gpu\033[0m"
+        fi
+        if "$REAL_LLAMA_PATH" --list-devices 2>&1 | grep -iqE "CUDA0|CUDA"; then
+            GPU_DEVICE_ARGS=(--device "CUDA0")
+        else
+            GPU_DEVICE_ARGS=()
+        fi
+
+        GPU_LAYERS=${AI_GPU_LAYERS:-${PRESET_GPU_LAYERS:-99}}
+        CTX_SIZE=${AI_CTX_SIZE:-${PRESET_CTX_SIZE:-8192}}
+        BATCH_SIZE=${AI_BATCH_SIZE:-${PRESET_BATCH_SIZE:-2048}}
+        UBATCH_SIZE=${AI_UBATCH_SIZE:-${PRESET_UBATCH_SIZE:-512}}
+        CACHE_TYPE_K=${AI_CACHE_TYPE_K:-${PRESET_CACHE_TYPE_K:-f16}}
+        CACHE_TYPE_V=${AI_CACHE_TYPE_V:-${PRESET_CACHE_TYPE_V:-f16}}
+        ;;
     VULKAN)
         echo "🔍 Verificando aceleración Vulkan..."
         if ! "$REAL_LLAMA_PATH" --list-devices 2>&1 | grep -iqE "Vulkan|AMD|Radeon"; then

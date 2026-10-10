@@ -19,37 +19,74 @@ echo -e "${BLUE}🔧 ASISTENTE DE CONFIGURACIÓN DE HARDWARE AI-CLI${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
 # 1. Sincronización Inicial
-echo -e "\n✦ Sincronizando bases de datos de pacman..."
-sudo pacman -Sy
+if command -v pacman &>/dev/null; then
+    echo -e "\n✦ Sincronizando bases de datos de pacman..."
+    sudo pacman -Sy
+fi
+
+# Detección automática de hardware
+SUGGESTED_OPTION="4"
+DETECTED_INFO="CPU"
+if command -v nvidia-smi &>/dev/null || (command -v lspci &>/dev/null && lspci | grep -iq "NVIDIA"); then
+    SUGGESTED_OPTION="1"
+    DETECTED_INFO="NVIDIA GPU detectada ($(lspci 2>/dev/null | grep -i 'VGA.*NVIDIA' | cut -d':' -f3 | sed 's/^ *//' || echo 'GeForce/RTX'))"
+elif command -v rocminfo &>/dev/null || (command -v lspci &>/dev/null && lspci | grep -iqE "Radeon|AMD"); then
+    SUGGESTED_OPTION="2"
+    DETECTED_INFO="AMD Radeon GPU detectada"
+elif command -v lspci &>/dev/null && lspci | grep -iq "Intel.*Graphics"; then
+    SUGGESTED_OPTION="3"
+    DETECTED_INFO="Intel Graphics detectada"
+fi
 
 # 2. Selección de Hardware
-echo -e "\n¿Qué hardware deseas configurar para la aceleración?"
-echo -e "1) ${GREEN}AMD ROCm${NC} (Escritorio RX 6600 / Alto Rendimiento)"
-echo -e "2) ${BLUE}Intel Vulkan${NC} (Laptop i5 / Gráficos Integrados)"
-echo -e "3) ${YELLOW}Solo CPU${NC} (Sin aceleración de GPU)"
-echo -e "4) Salir"
+echo -e "\n${YELLOW}Hardware detectado:${NC} $DETECTED_INFO"
+echo -e "¿Qué hardware deseas configurar para la aceleración?"
+echo -e "1) ${GREEN}NVIDIA CUDA${NC} (GeForce RTX / GTX / Quadro / Tesla)"
+echo -e "2) ${BLUE}AMD ROCm${NC} (Radeon RX 6000 / 7000 Series / Alto Rendimiento)"
+echo -e "3) ${CYAN}Intel Vulkan${NC} (Arc / Laptop / Gráficos Integrados)"
+echo -e "4) ${YELLOW}Solo CPU${NC} (Sin aceleración de GPU)"
+echo -e "5) Salir"
 
-read -p "Elija una opción [1-4]: " hw_option
+read -p "Elija una opción [1-5] (Enter = opción $SUGGESTED_OPTION): " hw_option
+hw_option="${hw_option:-$SUGGESTED_OPTION}"
 
 case $hw_option in
     1)
-        AI_MODE="AMD"
-        echo -e "\n✦ Instalando dependencias para AMD ROCm..."
-        sudo pacman -S --needed --noconfirm jq curl git base-devel cmake \
-            rocm-hip-sdk hip-runtime-amd vulkan-radeon vulkan-headers
-        CMAKE_FLAGS="-DGGML_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1030 -DCMAKE_PREFIX_PATH=/opt/rocm"
+        AI_MODE="CUDA"
+        echo -e "\n✦ Instalando dependencias para NVIDIA CUDA..."
+        if command -v pacman &>/dev/null; then
+            sudo pacman -S --needed --noconfirm jq curl git base-devel cmake cuda
+        elif command -v apt-get &>/dev/null; then
+            sudo apt-get update && sudo apt-get install -y jq curl git build-essential cmake nvidia-cuda-toolkit
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y jq curl git cmake gcc-c++ make
+        fi
+        CMAKE_FLAGS="-DGGML_CUDA=ON"
         ;;
     2)
-        AI_MODE="INTEL"
-        echo -e "\n✦ Instalando dependencias para Intel Vulkan..."
-        sudo pacman -S --needed --noconfirm jq curl git base-devel cmake \
-            vulkan-intel vulkan-headers spirv-headers spirv-tools
-        CMAKE_FLAGS="-DGGML_VULKAN=1"
+        AI_MODE="AMD"
+        echo -e "\n✦ Instalando dependencias para AMD ROCm..."
+        if command -v pacman &>/dev/null; then
+            sudo pacman -S --needed --noconfirm jq curl git base-devel cmake \
+                rocm-hip-sdk hip-runtime-amd vulkan-radeon vulkan-headers
+        fi
+        CMAKE_FLAGS="-DGGML_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1030 -DCMAKE_PREFIX_PATH=/opt/rocm"
         ;;
     3)
+        AI_MODE="INTEL"
+        echo -e "\n✦ Instalando dependencias para Intel Vulkan..."
+        if command -v pacman &>/dev/null; then
+            sudo pacman -S --needed --noconfirm jq curl git base-devel cmake \
+                vulkan-intel vulkan-headers spirv-headers spirv-tools
+        fi
+        CMAKE_FLAGS="-DGGML_VULKAN=1"
+        ;;
+    4)
         AI_MODE="CPU"
         echo -e "\n✦ Instalando dependencias base para CPU..."
-        sudo pacman -S --needed --noconfirm jq curl git base-devel cmake
+        if command -v pacman &>/dev/null; then
+            sudo pacman -S --needed --noconfirm jq curl git base-devel cmake
+        fi
         CMAKE_FLAGS=""
         ;;
     *)
