@@ -27,6 +27,7 @@ frontend/.vite-temp/
 models/*.gguf
 models/*/*.gguf
 *.gguf
+*.part
 
 # Logs and runtime history
 *.log

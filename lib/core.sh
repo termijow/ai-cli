@@ -10,11 +10,11 @@ _CORE_SOURCE="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd -P "$(dirname "$_CORE_SOURCE")" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
-# Asegurar que el PATH de Bash contenga Python real y herramientas de sistema
-if [[ -d "/c/WINDOWS/system32" ]]; then
-    export PATH="/c/WINDOWS/system32:$PATH"
-elif [[ -d "/c/Windows/System32" ]]; then
-    export PATH="/c/Windows/System32:$PATH"
+# Asegurar que curl use el ejecutable del sistema en Windows si el de PortableGit está restringido
+if [[ -f "/c/WINDOWS/system32/curl.exe" ]]; then
+    curl() { "/c/WINDOWS/system32/curl.exe" "$@"; }
+elif [[ -f "/c/Windows/System32/curl.exe" ]]; then
+    curl() { "/c/Windows/System32/curl.exe" "$@"; }
 fi
 
 if [[ -n "$LOCALAPPDATA" ]]; then

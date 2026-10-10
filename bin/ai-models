@@ -51,10 +51,14 @@ raw_models=(
     "/c/Users/$USER/models"/*/*.gguf
 )
 MODEL_FILES=()
+declare -A _seen_models=()
 for mf in "${raw_models[@]}"; do
-    MODEL_FILES+=("$(basename "$mf")")
+    bn="$(basename "$mf")"
+    if [[ -z "${_seen_models[$bn]}" ]]; then
+        _seen_models[$bn]=1
+        MODEL_FILES+=("$bn")
+    fi
 done
-mapfile -t MODEL_FILES < <(printf "%s\n" "${MODEL_FILES[@]}" | sort -u)
 
 if [[ ${#MODEL_FILES[@]} -eq 0 ]]; then
     echo -e "${RED}❌ No se encontraron modelos .gguf en $MODELS_DIR ni en $PROJECT_ROOT/models${NC}"
