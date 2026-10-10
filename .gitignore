@@ -53,3 +53,5 @@ Thumbs.db
 
 # Windows runtime binaries
 llama-bin/
+llama-prism/
+*.dll

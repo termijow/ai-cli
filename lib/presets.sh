@@ -52,6 +52,10 @@ find_preset_file() {
         for f in "$PRESETS_DIR"/*gemma-4-E4B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ gemma-4-E2B|gemma.*2b ]]; then
         for f in "$PRESETS_DIR"/*gemma-4-E2B*.conf; do match="$f"; break; done
+    elif [[ "$stem" =~ Ling-3\.0|ling.*3 ]]; then
+        for f in "$PRESETS_DIR"/*Ling-3.0*.conf; do match="$f"; break; done
+    elif [[ "$stem" =~ Ternary-Bonsai|bonsai ]]; then
+        for f in "$PRESETS_DIR"/*Ternary-Bonsai*.conf; do match="$f"; break; done
     fi
 
     if [[ -n "$match" && -f "$match" ]]; then
