@@ -404,6 +404,43 @@ case "$thinking_opt" in
         ;;
 esac
 
+# Cargar y configurar límite de salida (AI_MAX_TOKENS / Predict Window)
+CURRENT_MAX_TOKENS=$(grep "^AI_MAX_TOKENS=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+CURRENT_MAX_TOKENS=${CURRENT_MAX_TOKENS:-8192}
+
+echo -e "\n${BLUE}╭──────────────────────────────────────────────────────────╮${NC}"
+echo -e "${BLUE}│${NC} ${YELLOW}📤 LÍMITE DE SALIDA (Max Tokens / Predict Window)${NC}        ${BLUE}│${NC}"
+echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${NC}"
+echo -e "${BLUE}│${NC}  ${BOLD}1)${NC}  4,096 tokens  — Respuestas rápidas / scripts cortos   ${NC}"
+echo -e "${BLUE}│${NC}  ${BOLD}2)${NC}  8,192 tokens  — Estándar para modelos sin thinking     ${NC}"
+echo -e "${BLUE}│${NC}  ${BOLD}3)${NC} 16,384 tokens  — Recomendado para Thinking (evita corte) ${NC}"
+echo -e "${BLUE}│${NC}  ${BOLD}4)${NC} 32,768 tokens  — Proyectos grandes / código completo    ${NC}"
+echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
+if [[ "$NEW_THINKING" == "high" || "$NEW_THINKING" == "xhigh" ]]; then
+    echo -e "  ${YELLOW}💡 Consejo: Con Thinking activado, usa 16k tokens para que el razonamiento no agote el límite antes de darte la respuesta.${NC}"
+fi
+echo -e "  Actual: ${GREEN}${CURRENT_MAX_TOKENS}${NC} tokens\n"
+
+read -p "Elige [1-4] o escribe valor custom (Enter = mantener ${CURRENT_MAX_TOKENS}): " max_opt
+max_opt="${max_opt%$'\r'}"
+
+case "$max_opt" in
+    1) NEW_MAX_TOKENS=4096  ;;
+    2) NEW_MAX_TOKENS=8192  ;;
+    3) NEW_MAX_TOKENS=16384 ;;
+    4) NEW_MAX_TOKENS=32768 ;;
+    "") NEW_MAX_TOKENS=$CURRENT_MAX_TOKENS ;;
+    *)
+        if [[ "$max_opt" =~ ^[0-9]+$ ]]; then
+            NEW_MAX_TOKENS=$max_opt
+        else
+            NEW_MAX_TOKENS=$CURRENT_MAX_TOKENS
+        fi
+        ;;
+esac
+
+echo -e "\n${CYAN}📤 Límite de salida: ${BOLD}${NEW_MAX_TOKENS} tokens${NC}"
+
 # Actualizar .env
 sed -i "s|^MODEL_FILE=.*|MODEL_FILE=$SELECTED_MODEL|" "$ENV_FILE"
 sed -i "s|^AI_GPU_LAYERS=.*|AI_GPU_LAYERS=$GPU_LAYERS|" "$ENV_FILE"
@@ -423,6 +460,12 @@ if grep -q "^AI_THINKING_LEVEL=" "$ENV_FILE"; then
     sed -i "s|^AI_THINKING_LEVEL=.*|AI_THINKING_LEVEL=$NEW_THINKING|" "$ENV_FILE"
 else
     echo "AI_THINKING_LEVEL=$NEW_THINKING" >> "$ENV_FILE"
+fi
+
+if grep -q "^AI_MAX_TOKENS=" "$ENV_FILE"; then
+    sed -i "s|^AI_MAX_TOKENS=.*|AI_MAX_TOKENS=$NEW_MAX_TOKENS|" "$ENV_FILE"
+else
+    echo "AI_MAX_TOKENS=$NEW_MAX_TOKENS" >> "$ENV_FILE"
 fi
 
 # Si el repo no está configurado, actualizarlo con nombre estándar
@@ -449,7 +492,7 @@ if command -v save_model_preset &>/dev/null; then
         UBATCH=256
         EST_SPEED="15-30 tok/s"
     fi
-    save_model_preset "$SELECTED_MODEL" "Preset Personalizado" "Guardado automáticamente desde ai-models" "$GPU_LAYERS" "$NEW_CTX" "$NEW_REASONING" "$NEW_THINKING" "$BATCH" "$UBATCH" "$KV_CACHE" "$KV_CACHE" "$EST_SPEED"
+    save_model_preset "$SELECTED_MODEL" "Preset Personalizado" "Guardado automáticamente desde ai-models" "$GPU_LAYERS" "$NEW_CTX" "$NEW_REASONING" "$NEW_THINKING" "$BATCH" "$UBATCH" "$KV_CACHE" "$KV_CACHE" "$EST_SPEED" "local/$SELECTED_MODEL" "$NEW_MAX_TOKENS"
 fi
 
 echo -e "\n${GREEN}✅ Configuración guardada en .env y sincronizada en presets/ (${SELECTED_MODEL})${NC}"

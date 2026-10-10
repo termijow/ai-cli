@@ -145,6 +145,9 @@ save_model_preset() {
     local cache_v="${11:-f16}"
     local estimated_toks="${12:-60+ tok/s}"
     local model_repo="${13:-local/$model_file}"
+    local max_tokens="${14:-${AI_MAX_TOKENS:-8192}}"
+    local temp="${15:-${AI_TEMPERATURE:-0.2}}"
+    local mtp="${16:-${AI_MTP:-off}}"
 
     local stem=$(get_model_stem "$model_file")
     local target_file="$PRESETS_DIR/$stem.conf"
@@ -176,6 +179,11 @@ AI_CACHE_TYPE_V=$cache_v
 # Razonamiento / Thinking
 AI_REASONING=$reasoning
 AI_THINKING_LEVEL=$thinking_level
+
+# Límite de salida, muestreo y MTP
+AI_MAX_TOKENS=$max_tokens
+AI_TEMPERATURE=$temp
+AI_MTP=$mtp
 EOF
 
     echo "$target_file"
