@@ -48,6 +48,8 @@ find_preset_file() {
         for f in "$PRESETS_DIR"/*Qwen3.6-35B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ Qwen3\.8-27B|qwen.*27b ]]; then
         for f in "$PRESETS_DIR"/*Qwen3.8-27B*.conf; do match="$f"; break; done
+    elif [[ "$stem" =~ gemma-4-26B|gemma.*26b ]]; then
+        for f in "$PRESETS_DIR"/*gemma-4-26B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ gemma-4-E4B|gemma.*4b ]]; then
         for f in "$PRESETS_DIR"/*gemma-4-E4B*.conf; do match="$f"; break; done
     elif [[ "$stem" =~ gemma-4-E2B|gemma.*2b ]]; then
