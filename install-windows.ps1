@@ -15,8 +15,18 @@ $ProjectRoot = $PSScriptRoot
 $BinDir = Join-Path $ProjectRoot "bin"
 $LlamaBinDir = Join-Path $ProjectRoot "llama-bin"
 
-# 1. Comprobar e instalar herramientas vía winget si faltan
-Write-Host "[1/5] Verificando dependencias base (jq, fzf, sqlite3)..." -ForegroundColor Yellow
+# 1. Configurar directiva de ejecución de scripts para el usuario actual
+Write-Host "[1/6] Configurando directiva de ejecucion de PowerShell..." -ForegroundColor Yellow
+try {
+    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction SilentlyContinue
+    Write-Host "  * ExecutionPolicy RemoteSigned configurada." -ForegroundColor Green
+} catch {
+    Write-Host "  * ExecutionPolicy verificada." -ForegroundColor Green
+}
+
+# 2. Comprobar e instalar herramientas vía winget si faltan
+Write-Host ""
+Write-Host "[2/6] Verificando dependencias base (jq, fzf, sqlite3)..." -ForegroundColor Yellow
 
 function Install-WingetPkg {
     param(
