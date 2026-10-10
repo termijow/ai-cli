@@ -55,8 +55,10 @@ Requisitos obligatorios:
 6. Pantalla de Game Over con botón de reinicio y botón de pausa.
 7. Cero placeholders, cero comentarios como '// el resto aquí'. Entrega el código 100% completo y funcional listo para abrir en el navegador.
 
-Formato de salida:
-Entrega únicamente el bloque con el código del archivo HTML completo dentro de ```html ... ```.
+Formato de salida obligatorio:
+1. En tu espacio de razonamiento (thinking), analiza y planifica cada componente del juego.
+2. Concluye tu pensamiento formalmente cerrando con </think>.
+3. Entrega únicamente el bloque con el código del archivo HTML completo dentro de ```html ... ```.
 """
 
 def colorize(text, color_code):
@@ -200,95 +202,95 @@ class ArenaStreamer:
         self.accumulated_content = []
         self.raw_buffer = ""
         self.completion_tokens = 0
+        self.thought_token_count = 0
+        self.code_token_count = 0
 
     def process_delta(self, delta):
         thought = delta.get("reasoning_content") or delta.get("thought")
         content = delta.get("content", "")
 
-        # 1. Razonamiento nativo separado por llama-server
+        # Unificar el texto entrante
+        incoming_text = ""
         if thought:
-            self.completion_tokens += 1
-            if self.state != "thought":
-                self.state = "thought"
-                print(f"\n\n{c_yellow('🧠 [Razonamiento / Thinking]:')}\n\033[0;33m", end="", flush=True)
-            self.accumulated_thought.append(thought)
-            sys.stdout.write(thought)
-            sys.stdout.flush()
+            incoming_text = thought
+        elif content:
+            incoming_text = content
 
-        # 2. Contenido regular o tags de pensamiento embebidos
-        if content:
-            self.completion_tokens += 1
-            text = self.raw_buffer + content
-            self.raw_buffer = ""
+        if not incoming_text:
+            return
 
-            while text:
-                if self.state != "thought":
-                    pos_think = text.find("<think>")
-                    pos_thought = text.find("<thought>")
-                    candidates = [p for p in [pos_think, pos_thought] if p != -1]
-                    if candidates:
-                        pos = min(candidates)
-                        tag = "<think>" if pos == pos_think else "<thought>"
-                        before = text[:pos]
-                        if before:
-                            self._write_code(before)
-                        self.state = "thought"
-                        print(f"\n\n{c_yellow('🧠 [Razonamiento / Thinking]:')}\n\033[0;33m", end="", flush=True)
-                        text = text[pos + len(tag):]
-                        continue
+        self.completion_tokens += 1
+        text = self.raw_buffer + incoming_text
+        self.raw_buffer = ""
+
+        while text:
+            if self.state != "code":
+                # Si estamos en idle, iniciar modo pensamiento
+                if self.state == "idle":
+                    self.state = "thought"
+                    print(f"\n\n{c_yellow('🧠 [Razonamiento / Thinking]:')}\n\033[0;33m", end="", flush=True)
+
+                # Comprobar si el texto contiene el cierre de pensamiento o el inicio del código
+                triggers = ["</think>", "</thought>", "```html", "```HTML", "```\n<!DOCTYPE", "<!DOCTYPE html>", "<!doctype html>", "<html"]
+                found_pos = -1
+                found_trigger = None
+
+                for trg in triggers:
+                    p = text.find(trg)
+                    if p != -1 and (found_pos == -1 or p < found_pos):
+                        found_pos = p
+                        found_trigger = trg
+
+                if found_pos != -1:
+                    # Encontrado trigger de transición a código
+                    before = text[:found_pos]
+                    if before:
+                        self._write_thought(before)
+                    
+                    # Cambiar estado a código
+                    self.state = "code"
+                    print(f"\033[0m\n\n{c_green('💻 [Generando Código / Snake Game]:')}\n\033[0;32m", end="", flush=True)
+
+                    # Si el trigger fue </think> o </thought>, lo consumimos sin imprimirlo en el código
+                    if found_trigger in ["</think>", "</thought>"]:
+                        text = text[found_pos + len(found_trigger):]
                     else:
-                        prefixes = ("<thought", "<thoug", "<thou", "<tho", "<think", "<thin", "<thi", "<th", "<t", "<")
-                        matched_p = None
-                        for p in prefixes:
-                            if text.endswith(p):
-                                matched_p = p
-                                break
-                        if matched_p:
-                            self.raw_buffer = matched_p
-                            text = text[:-len(matched_p)]
-                        if text:
-                            self._write_code(text)
-                            text = ""
+                        text = text[found_pos:]
+                    continue
                 else:
-                    pos_close_think = text.find("</think>")
-                    pos_close_thought = text.find("</thought>")
-                    candidates = [p for p in [pos_close_think, pos_close_thought] if p != -1]
-                    if candidates:
-                        pos = min(candidates)
-                        tag = "</think>" if pos == pos_close_think else "</thought>"
-                        before = text[:pos]
-                        if before:
-                            self._write_thought(before)
-                        self.state = "code"
-                        print(f"\033[0m\n\n{c_green('💻 [Generando Código / Snake Game]:')}\n\033[0;32m", end="", flush=True)
-                        text = text[pos + len(tag):]
-                        continue
-                    else:
-                        prefixes = ("</thought", "</thoug", "</thou", "</tho", "</think", "</thin", "</thi", "</th", "</t", "</")
-                        matched_p = None
-                        for p in prefixes:
-                            if text.endswith(p):
-                                matched_p = p
-                                break
-                        if matched_p:
-                            self.raw_buffer = matched_p
-                            text = text[:-len(matched_p)]
-                        if text:
-                            self._write_thought(text)
-                            text = ""
+                    # Verificar si termina con un prefijo parcial de algún trigger
+                    prefixes = ("</thought", "</thoug", "</thou", "</tho", "</think", "</thin", "</thi", "</th", "</t", "</",
+                                "```html", "```htm", "```ht", "```h", "```", "`",
+                                "<!DOCTYPE html", "<!DOCTYPE", "<!DOC", "<!D", "<!",
+                                "<html", "<htm", "<ht", "<")
+                    matched_p = None
+                    for p in prefixes:
+                        if text.endswith(p):
+                            matched_p = p
+                            break
+                    if matched_p:
+                        self.raw_buffer = matched_p
+                        text = text[:-len(matched_p)]
+                    
+                    if text:
+                        self._write_thought(text)
+                        text = ""
+            else:
+                # Ya estamos en modo código: todo el texto posterior va al código
+                self._write_code(text)
+                text = ""
 
     def _write_thought(self, text):
         if not text: return
         self.accumulated_thought.append(text)
+        self.thought_token_count += 1
         sys.stdout.write(text)
         sys.stdout.flush()
 
     def _write_code(self, text):
         if not text: return
         self.accumulated_content.append(text)
-        if self.state != "code":
-            self.state = "code"
-            print(f"\033[0m\n\n{c_green('💻 [Generando Código / Snake Game]:')}\n\033[0;32m", end="", flush=True)
+        self.code_token_count += 1
         sys.stdout.write(text)
         sys.stdout.flush()
 
@@ -551,7 +553,7 @@ def query_model_streaming(messages, port=1234, max_tokens=STANDARD_MAX_TOKENS):
         full_output = "".join(streamer.accumulated_thought)
 
     prompt_tokens = sum(len(m["content"]) for m in messages) // 4
-    return full_output, completion_tokens, prompt_tokens, tok_sec, t_total
+    return full_output, completion_tokens, prompt_tokens, tok_sec, t_total, streamer.thought_token_count, streamer.code_token_count
 
 def run_loop_engineering_benchmark(model_path, max_session_tokens=MAX_TEST_TOKEN_BUDGET, max_iterations=4):
     """
@@ -604,7 +606,8 @@ def run_loop_engineering_benchmark(model_path, max_session_tokens=MAX_TEST_TOKEN
             messages = check_and_compact_context(messages, max_ctx=ctx_limit)
 
             print(c_cyan(f"✦ Generando y razonando en tiempo real (iteración {iteration}):"))
-            output_text, completion_tokens, prompt_tokens, speed, t_iter = query_model_streaming(messages)
+            query_res = query_model_streaming(messages)
+            output_text, completion_tokens, prompt_tokens, speed, t_iter, th_cnt, cd_cnt = query_res
             if output_text is None:
                 print(c_red("❌ Falló la consulta al modelo."))
                 break
@@ -613,6 +616,8 @@ def run_loop_engineering_benchmark(model_path, max_session_tokens=MAX_TEST_TOKEN
             total_session_tokens += turn_tokens
             total_time += t_iter
             if speed > 0: speeds.append(speed)
+
+            print(f"\n\n{c_green('✓ Generación completada:')} {completion_tokens} tokens (🧠 Pensamiento: {th_cnt} | 💻 Código: {cd_cnt}) | ⚡ {speed:.2f} tok/s")
 
             html_code = extract_html_code(output_text)
             
