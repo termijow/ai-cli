@@ -283,6 +283,7 @@ case "$CTX_TIER" in
         echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
         echo -e "  Actual: ${GREEN}${CURRENT_CTX}${NC} tokens\n"
         read -p "Elige [1-5] o escribe valor custom (Enter = mantener ${CURRENT_CTX}): " ctx_opt
+        ctx_opt="${ctx_opt%$'\r'}"
         case "$ctx_opt" in
             1) NEW_CTX=4096   ;;
             2) NEW_CTX=8192   ;;
@@ -302,6 +303,7 @@ case "$CTX_TIER" in
         echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
         echo -e "  Actual: ${GREEN}${CURRENT_CTX}${NC} tokens\n"
         read -p "Elige [1-5] o escribe valor custom (Enter = mantener ${CURRENT_CTX}): " ctx_opt
+        ctx_opt="${ctx_opt%$'\r'}"
         case "$ctx_opt" in
             1) NEW_CTX=4096   ;;
             2) NEW_CTX=8192   ;;
@@ -320,6 +322,7 @@ case "$CTX_TIER" in
         echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
         echo -e "  Actual: ${GREEN}${CURRENT_CTX}${NC} tokens\n"
         read -p "Elige [1-4] o escribe valor custom (Enter = mantener ${CURRENT_CTX}): " ctx_opt
+        ctx_opt="${ctx_opt%$'\r'}"
         case "$ctx_opt" in
             1) NEW_CTX=4096   ;;
             2) NEW_CTX=8192   ;;
@@ -336,6 +339,7 @@ case "$CTX_TIER" in
         echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
         echo -e "  Actual: ${GREEN}${CURRENT_CTX}${NC} tokens\n"
         read -p "Elige [1-3] o escribe valor custom (Enter = mantener ${CURRENT_CTX}): " ctx_opt
+        ctx_opt="${ctx_opt%$'\r'}"
         case "$ctx_opt" in
             1) NEW_CTX=2048  ;;
             2) NEW_CTX=4096  ;;
@@ -365,6 +369,7 @@ echo -e "${BLUE}╰────────────────────�
 echo -e "  Actual: ${GREEN}${CURRENT_REASONING}${NC} / nivel ${GREEN}${CURRENT_THINKING}${NC}\n"
 
 read -p "Elige nivel [0-3] (Enter para mantener '${CURRENT_THINKING}'): " thinking_opt
+thinking_opt="${thinking_opt%$'\r'}"
 
 case "$thinking_opt" in
     0)
