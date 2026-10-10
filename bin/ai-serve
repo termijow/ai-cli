@@ -248,6 +248,8 @@ esac
 PRESET_DISPLAY_NAME="${PRESET_NAME:-Configuración Personalizada}"
 PRESET_DISPLAY_TOKS="${PRESET_ESTIMATED_TOKS:-Estimado Variable}"
 MAX_TOKENS="${AI_MAX_TOKENS:-${PRESET_MAX_TOKENS:-16384}}"
+MTP_FLAG=${AI_MTP:-${PRESET_MTP:-off}}
+MTP_DRAFT_MAX=${AI_MTP_DRAFT_MAX:-${PRESET_MTP_DRAFT_MAX:-2}}
 
 # 7. Interfaz visual de inicio
 echo -e "\033[0;34m╭──────────────────────────────────────────────────────────╮\033[0m"
@@ -262,6 +264,9 @@ echo -e "\033[0;36m│\033[0m 🚀 \033[1mOffload:\033[0m    \033[0;32m$GPU_LAYE
 echo -e "\033[0;36m│\033[0m 💾 \033[1mKV Cache:\033[0m   \033[0;32mK: $CACHE_TYPE_K | V: $CACHE_TYPE_V\033[0m"
 echo -e "\033[0;36m│\033[0m 📦 \033[1mBatch:\033[0m      \033[0;32mBatch: $BATCH_SIZE | UBatch: $UBATCH_SIZE\033[0m"
 echo -e "\033[0;36m│\033[0m 💭 \033[1mThinking:\033[0m   \033[0;32m$REASONING_FLAG ($THINKING_LEVEL, budget: $REASONING_BUDGET)\033[0m"
+if [[ "$MTP_FLAG" == "on" || "$MODEL_FILE" =~ MTP|mtp ]]; then
+echo -e "\033[0;36m│\033[0m ⏩ \033[1mMTP:\033[0m        \033[1;32mActivado (draft-mtp, n-max: $MTP_DRAFT_MAX)\033[0m"
+fi
 echo -e "\033[0;36m│\033[0m 📤 \033[1mMax Tokens:\033[0m \033[0;32m$MAX_TOKENS tokens (salida)\033[0m"
 echo -e "\033[0;36m│\033[0m 🌐 \033[1mEndpoint:\033[0m   \033[0;32mhttp://localhost:$PORT\033[0m"
 echo -e "\033[0;34m╰──────────────────────────────────────────────────────────╯\033[0m"
@@ -280,6 +285,10 @@ EXTRA_FLAGS=(
     --reasoning-format none \
     --predict "$MAX_TOKENS" \
 )
+
+if [[ "$MTP_FLAG" == "on" || "$MODEL_FILE" =~ MTP|mtp ]]; then
+    EXTRA_FLAGS+=(--spec-type draft-mtp --spec-draft-n-max "$MTP_DRAFT_MAX")
+fi
 
 # 8. Verificación previa de ejecución y compatibilidad
 _test_run=$("$REAL_LLAMA_PATH" --help 2>&1 || true)

@@ -92,6 +92,8 @@ load_preset_vars() {
     PRESET_ESTIMATED_TOKS="~30 tok/s"
     PRESET_MODEL_REPO=""
     PRESET_TEMPERATURE="0.2"
+    PRESET_MTP="off"
+    PRESET_MTP_DRAFT_MAX="2"
 
     if [[ -f "$preset_file" ]]; then
         # Sourced en subshell para no colisionar con el entorno principal si no se desea,
@@ -119,6 +121,8 @@ load_preset_vars() {
                 AI_THREADS)            PRESET_THREADS="$val" ;;
                 AI_MAX_TOKENS)          PRESET_MAX_TOKENS="$val" ;;
                 AI_TEMPERATURE)        PRESET_TEMPERATURE="$val" ;;
+                AI_MTP)                PRESET_MTP="$val" ;;
+                AI_MTP_DRAFT_MAX)      PRESET_MTP_DRAFT_MAX="$val" ;;
                 AI_ESTIMATED_TOKS)     PRESET_ESTIMATED_TOKS="$val" ;;
                 MODEL_REPO)            PRESET_MODEL_REPO="$val" ;;
             esac
@@ -250,6 +254,22 @@ apply_preset_to_env_file() {
             sed -i "s|^AI_TEMPERATURE=.*|AI_TEMPERATURE=$PRESET_TEMPERATURE|" "$env_file"
         else
             echo "AI_TEMPERATURE=$PRESET_TEMPERATURE" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_MTP" ]]; then
+        if grep -q "^AI_MTP=" "$env_file"; then
+            sed -i "s|^AI_MTP=.*|AI_MTP=$PRESET_MTP|" "$env_file"
+        else
+            echo "AI_MTP=$PRESET_MTP" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_MTP_DRAFT_MAX" ]]; then
+        if grep -q "^AI_MTP_DRAFT_MAX=" "$env_file"; then
+            sed -i "s|^AI_MTP_DRAFT_MAX=.*|AI_MTP_DRAFT_MAX=$PRESET_MTP_DRAFT_MAX|" "$env_file"
+        else
+            echo "AI_MTP_DRAFT_MAX=$PRESET_MTP_DRAFT_MAX" >> "$env_file"
         fi
     fi
 
