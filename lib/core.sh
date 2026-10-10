@@ -169,7 +169,7 @@ clean_markdown() {
 call_llm_robust() {
     local sys="$1"
     local usr="$2"
-    local temp="0.2"
+    local temp="${AI_TEMPERATURE:-0.2}"
 
     log_info "Analizando con IA (Temp: $temp)..."
 
@@ -178,7 +178,7 @@ call_llm_robust() {
         --arg sys "$sys" \
         --arg user "$usr" \
         --argjson t "$temp" \
-        --argjson max "${AI_MAX_TOKENS:-2048}" \
+        --argjson max "${AI_MAX_TOKENS:-8192}" \
         '{"messages": [{"role": "system", "content": $sys}, {"role": "user", "content": $user}], "temperature": $t, "max_tokens": $max}')
 
     local tmp_res=$(mktemp)
@@ -278,7 +278,23 @@ detect_paths() {
 }
 
 get_base_sys_prompt() {
-    echo "Eres un Ingeniero Senior de Software. Genera código limpio, moderno e idiomático."
+    if [[ -n "$AI_SYSTEM_PROMPT" ]]; then
+        echo -e "$AI_SYSTEM_PROMPT"
+        return
+    fi
+    cat <<'EOF'
+Eres un ingeniero de software senior y especialista en arquitectura limpia.
+
+### Principios de trabajo:
+1. Precisión sobre verborrea: Proporciona soluciones directas, robustas y funcionales.
+2. Pensamiento estructurado: Antes de emitir código complejo, planifica mentalmente los estados, dependencias y casos borde (edge cases).
+3. Autocontención: Asegúrate de que el código esté 100% completo, sin placeholders como "// el resto aquí" o funciones inventadas no declaradas.
+4. Robustez: Valida tipos, límites de colecciones y variables no inicializadas.
+
+### Formato de salida:
+- Si se solicita código: Entrega el bloque de código completo y una breve explicación técnica con viñetas destacando las decisiones clave o advertencias.
+- No añadas saludos, disculpas ni relleno conversacional.
+EOF
 }
 
 apply_changes() {

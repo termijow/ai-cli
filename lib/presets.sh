@@ -91,6 +91,7 @@ load_preset_vars() {
     PRESET_THREADS=""
     PRESET_ESTIMATED_TOKS="~30 tok/s"
     PRESET_MODEL_REPO=""
+    PRESET_TEMPERATURE="0.2"
 
     if [[ -f "$preset_file" ]]; then
         # Sourced en subshell para no colisionar con el entorno principal si no se desea,
@@ -117,6 +118,7 @@ load_preset_vars() {
                 AI_CACHE_TYPE_V)       PRESET_CACHE_TYPE_V="$val" ;;
                 AI_THREADS)            PRESET_THREADS="$val" ;;
                 AI_MAX_TOKENS)          PRESET_MAX_TOKENS="$val" ;;
+                AI_TEMPERATURE)        PRESET_TEMPERATURE="$val" ;;
                 AI_ESTIMATED_TOKS)     PRESET_ESTIMATED_TOKS="$val" ;;
                 MODEL_REPO)            PRESET_MODEL_REPO="$val" ;;
             esac
@@ -233,6 +235,22 @@ apply_preset_to_env_file() {
         sed -i "s|^AI_CACHE_TYPE_V=.*|AI_CACHE_TYPE_V=$PRESET_CACHE_TYPE_V|" "$env_file"
     else
         echo "AI_CACHE_TYPE_V=$PRESET_CACHE_TYPE_V" >> "$env_file"
+    fi
+
+    if [[ -n "$PRESET_MAX_TOKENS" ]]; then
+        if grep -q "^AI_MAX_TOKENS=" "$env_file"; then
+            sed -i "s|^AI_MAX_TOKENS=.*|AI_MAX_TOKENS=$PRESET_MAX_TOKENS|" "$env_file"
+        else
+            echo "AI_MAX_TOKENS=$PRESET_MAX_TOKENS" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_TEMPERATURE" ]]; then
+        if grep -q "^AI_TEMPERATURE=" "$env_file"; then
+            sed -i "s|^AI_TEMPERATURE=.*|AI_TEMPERATURE=$PRESET_TEMPERATURE|" "$env_file"
+        else
+            echo "AI_TEMPERATURE=$PRESET_TEMPERATURE" >> "$env_file"
+        fi
     fi
 
     return 0
