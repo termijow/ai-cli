@@ -188,9 +188,10 @@ main_menu() {
         echo -e "  ${BOLD}5)${NC} 📜 ${MAGENTA}Historial de Consultas Recientes${NC} (ai-history)"
         echo -e "  ${BOLD}6)${NC} 💡 ${BLUE}Centro de Ayuda & Guía (ai-help)${NC}"
         echo -e "  ${BOLD}7)${NC} 🔍 ${CYAN}Validar Sistema & Dependencias${NC} (ai-validate)"
+        echo -e "  ${BOLD}8)${NC} ⚔️  ${YELLOW}Arena & Torneo de Modelos${NC} (ai arena)"
         echo -e "  ${BOLD}0)${NC} 🚪 ${RED}Salir${NC}"
         echo ""
-        read -p "Selecciona una opción [1-7, 0]: " menu_choice
+        read -p "Selecciona una opción [1-8, 0]: " menu_choice
 
         case "$menu_choice" in
             1)
@@ -219,6 +220,11 @@ main_menu() {
                 ;;
             7)
                 "$PROJECT_ROOT/bin/ai-validate.sh"
+                echo ""
+                read -p "Presiona ENTER para continuar..."
+                ;;
+            8)
+                "$PROJECT_ROOT/bin/ai-arena"
                 echo ""
                 read -p "Presiona ENTER para continuar..."
                 ;;
