@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==============================================================================
-# AI-CLI ARENA: LLM TOURNAMENT & BENCHMARK HARNESS
+# AI-CLI ARENA: LLM TOURNAMENT & LOOP ENGINEERING HARNESS
 # ==============================================================================
 import os
 import sys
@@ -19,6 +19,13 @@ try:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
+
+# Garantizar que Node.js y npm estén en el PATH para subprocesos
+node_dir = r"C:\Program Files\nodejs"
+npm_dir = r"C:\Users\USUARIO\AppData\Roaming\npm"
+curr_path = os.environ.get("PATH", "")
+if node_dir not in curr_path:
+    os.environ["PATH"] = f"{node_dir};{npm_dir};{curr_path}"
 
 # Configuración y Rutas
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -41,15 +48,15 @@ Tu tarea es programar un juego arcade retro Snake (la viborita) en un ÚNICO arc
 
 Requisitos obligatorios:
 1. Gráficos en Canvas 2D con estética retro cyberpunk o arcade oscura (colores neón, rejilla tenue, serpiente con gradiente/brillo).
-2. Bucle de juego fluido a velocidad constante (10-14 ticks por segundo).
-3. Controles: Teclado (Flechas y WASD) y controles táctiles en pantalla (D-Pad táctil responsivo para móvil).
+2. Bucle de juego fluido a velocidad constante (10-14 ticks por segundo con requestAnimationFrame o delta time).
+3. Controles: Teclado (Flechas y WASD) y controles táctiles en pantalla (D-Pad táctil responsivo para móvil con eventos touchstart/touchend).
 4. Mecánicas: Sistema de puntuación actual y récord (High Score) persistido en localStorage.
 5. Efectos: Efecto de partículas cuando come manzana, vibración/screen shake ligero al morir, y sonidos sintetizados con la Web Audio API (sin audios externos ni librerías).
 6. Pantalla de Game Over con botón de reinicio y botón de pausa.
 7. Cero placeholders, cero comentarios como '// el resto aquí'. Entrega el código 100% completo y funcional listo para abrir en el navegador.
 
 Formato de salida:
-Entrega únicamente el bloque con el código del archivo HTML completo.
+Entrega únicamente el bloque con el código del archivo HTML completo dentro de ```html ... ```.
 """
 
 def colorize(text, color_code):
@@ -67,7 +74,6 @@ def find_available_models():
     if not MODELS_DIR.exists():
         return found
     for f in MODELS_DIR.rglob("*.gguf"):
-        # Ignorar archivos auxiliares mmproj o imatrix
         if "mmproj" in f.name.lower() or "imatrix" in f.name.lower():
             continue
         found.append(f)
@@ -91,7 +97,6 @@ def wait_for_server(port=1234, timeout=45):
     return False
 
 def load_preset_for_model(model_name):
-    # Buscar preset por coincidencia
     stem = model_name.replace(".gguf", "")
     candidates = [
         PRESETS_DIR / f"{stem}.conf",
@@ -101,7 +106,6 @@ def load_preset_for_model(model_name):
         if c.exists():
             return parse_preset_file(c)
     
-    # Búsqueda por glob heurístico
     if "gemma-4-26b" in stem.lower():
         p = list(PRESETS_DIR.glob("*gemma-4-26B*.conf"))
         if p: return parse_preset_file(p[0])
@@ -143,7 +147,7 @@ def start_server_for_model(model_path):
     exe = LLAMA_PRISM if (is_prism and LLAMA_PRISM.exists()) else LLAMA_BIN
 
     gpu_layers = preset.get("AI_GPU_LAYERS", "99")
-    ctx_size = preset.get("AI_CTX_SIZE", "16384")
+    ctx_size = preset.get("AI_CTX_SIZE", "24576")
     cache_k = preset.get("AI_CACHE_TYPE_K", "q4_0")
     cache_v = preset.get("AI_CACHE_TYPE_V", "q4_0")
     mtp = preset.get("AI_MTP", "off")
@@ -177,7 +181,6 @@ def start_server_for_model(model_path):
     if mtp == "on" or "mtp" in name.lower():
         cmd.extend(["--spec-type", "draft-mtp", "--spec-draft-n-max", str(mtp_draft)])
 
-    # Lanzar proceso en segundo plano oculto
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
@@ -299,61 +302,206 @@ class ArenaStreamer:
         sys.stdout.write("\033[0m\n")
         sys.stdout.flush()
 
-def evaluate_code(code_str):
+def extract_html_code(text):
+    if not text: return ""
+    match = re.search(r"```(?:html)?\s*(<!DOCTYPE html[\s\S]*?|<html[\s\S]*?)```", text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    html_match = re.search(r"(<!DOCTYPE html[\s\S]*?</html>|<html[\s\S]*?</html>)", text, re.IGNORECASE)
+    if html_match:
+        return html_match.group(1).strip()
+    return text.strip()
+
+def evaluate_code_deep(code_str):
+    """
+    Suite profunda de verificación automatizada (Harness de Calidad).
+    Valida estructura HTML, sintaxis JavaScript con Node.js, Canvas 2D, Web Audio API,
+    controles táctiles, localStorage y ausencia de placeholders.
+    """
     score = 0
-    details = []
+    passed = []
+    failed = []
 
+    # 1. Estructura HTML y Meta viewport (15 pts)
     if "<!DOCTYPE html>" in code_str or "<html" in code_str:
+        score += 10
+        passed.append("Estructura HTML5 válida (+10)")
+    else:
+        failed.append("Falta declaración <!DOCTYPE html> o estructura <html> básica.")
+
+    if 'name="viewport"' in code_str or "viewport" in code_str.lower():
+        score += 5
+        passed.append("Meta viewport para responsividad móvil (+5)")
+    else:
+        failed.append("Falta meta viewport para adaptación móvil (<meta name='viewport' content='width=device-width, initial-scale=1.0'>).")
+
+    # 2. Sintaxis JavaScript mediante Node.js (15 pts)
+    js_code = ""
+    script_matches = re.findall(r"<script[^>]*>([\s\S]*?)</script>", code_str, re.IGNORECASE)
+    if script_matches:
+        js_code = "\n".join(script_matches)
+
+    if js_code.strip():
+        temp_js = PROJECT_ROOT / "scratch_syntax_check.js"
+        try:
+            with open(temp_js, "w", encoding="utf-8") as f:
+                f.write(js_code)
+            
+            node_cmd = ["node", "--check", str(temp_js)]
+            res = subprocess.run(node_cmd, capture_output=True, text=True, timeout=5)
+            if res.returncode == 0:
+                score += 15
+                passed.append("JavaScript 100% válido y libre de errores de sintaxis (+15)")
+            else:
+                err_lines = [l.strip() for l in res.stderr.splitlines() if "SyntaxError" in l or "^" in l]
+                err_summary = " | ".join(err_lines[:2]) if err_lines else res.stderr.strip()[:100]
+                failed.append(f"Error de sintaxis en JavaScript detectado por Node: {err_summary}")
+        except Exception:
+            if "function" in js_code and "{" in js_code:
+                score += 10
+                passed.append("Estructura JavaScript presente (+10)")
+        finally:
+            if temp_js.exists():
+                try: temp_js.unlink()
+                except Exception: pass
+    else:
+        failed.append("No se encontró bloque <script> con código JavaScript ejecutable.")
+
+    # 3. Canvas 2D y Renderizado (15 pts)
+    if "<canvas" in code_str and ("getContext('2d')" in code_str or 'getContext("2d")' in code_str):
         score += 15
-        details.append("Estructura HTML básica (+15)")
-    if "<canvas" in code_str:
-        score += 20
-        details.append("Canvas 2D presente (+20)")
+        passed.append("Canvas 2D con contexto gráfico inicializado (+15)")
+    else:
+        failed.append("Falta elemento <canvas> o llamada a getContext('2d').")
+
+    # 4. Game Loop fluido (10 pts)
     if "requestAnimationFrame" in code_str or "setInterval" in code_str:
-        score += 15
-        details.append("Game Loop estándar (+15)")
-    if "AudioContext" in code_str or "webkitAudioContext" in code_str:
-        score += 15
-        details.append("Web Audio API sintetizada (+15)")
-    if "localStorage" in code_str:
         score += 10
-        details.append("High Score persistente (+10)")
-    if "touchstart" in code_str or "touch" in code_str.lower() or "dpad" in code_str.lower():
+        passed.append("Bucle de juego (Game Loop) implementado (+10)")
+    else:
+        failed.append("Falta bucle de juego continuo (requestAnimationFrame o setInterval).")
+
+    # 5. Web Audio API sintetizada (15 pts)
+    has_audio_ctx = "AudioContext" in code_str or "webkitAudioContext" in code_str
+    has_oscillator = "createOscillator" in code_str or "OscillatorNode" in code_str
+    if has_audio_ctx and has_oscillator:
         score += 15
-        details.append("Controles táctiles / D-Pad (+15)")
-    if len(code_str) > 2000 and "TODO" not in code_str:
+        passed.append("Efectos de sonido sintetizados con Web Audio API (Osciladores procedimentales) (+15)")
+    elif has_audio_ctx:
+        score += 8
+        passed.append("AudioContext inicializado pero faltan osciladores (+8)")
+        failed.append("Web Audio API incompleta: usa createOscillator() y createGain() para sintetizar sonidos al comer y morir.")
+    else:
+        failed.append("Falta Web Audio API: el juego debe sintetizar sonidos procedimentales sin archivos externos.")
+
+    # 6. Controles: Teclado + Touch D-Pad (15 pts)
+    has_kbd = "keydown" in code_str or "ArrowUp" in code_str or "keyCode" in code_str or "key" in code_str
+    has_touch = "touchstart" in code_str or "pointerdown" in code_str or "dpad" in code_str.lower() or "touch" in code_str.lower()
+    if has_kbd and has_touch:
+        score += 15
+        passed.append("Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)")
+    elif has_kbd:
+        score += 8
+        passed.append("Controles de teclado implementados (+8)")
+        failed.append("Faltan controles táctiles: añade botones D-Pad en pantalla con eventos touchstart/touchend para móvil.")
+    else:
+        failed.append("Faltan controles de teclado y controles táctiles.")
+
+    # 7. LocalStorage High Score (10 pts)
+    if "localStorage" in code_str and ("setItem" in code_str or "getItem" in code_str):
         score += 10
-        details.append("Código autocontenido y completo (+10)")
+        passed.append("Récord persistente (High Score) en localStorage (+10)")
+    else:
+        failed.append("Falta persistencia de récord: usa localStorage.getItem() y localStorage.setItem().")
 
-    return min(score, 100), details
+    # 8. Efectos visuales y ausencia de placeholders (5 pts)
+    if ("particle" in code_str.lower() or "particula" in code_str.lower() or "shake" in code_str.lower()):
+        score += 5
+        passed.append("Efectos visuales especiales (partículas / screen shake) (+5)")
+    else:
+        failed.append("Faltan efectos visuales: añade sistema de partículas al comer manzana o screen shake al morir.")
 
-def run_benchmark_on_model(model_path):
-    model_name = model_path.name
-    print(c_cyan(f"\n========================================================"))
-    print(c_yellow(f"🚀 INICIANDO BENCHMARK ARENA: {model_name}"))
-    print(c_cyan(f"========================================================"))
-    print(f"📦 Tamaño: {model_path.stat().st_size / (1024**3):.2f} GB")
-    print(f"🧠 Thinking Budget: {STANDARD_THINKING_BUDGET} tokens")
-    print(f"📤 Ventana Max Output: {STANDARD_MAX_TOKENS} tokens")
-    print(f"🎯 Límite Total de Sesión: {MAX_TEST_TOKEN_BUDGET} tokens")
+    if "TODO" in code_str or "// el resto" in code_str.lower() or len(code_str) < 1500:
+        failed.append("Código contiene placeholders ('TODO') o está incompleto (< 1500 bytes).")
 
-    print(c_blue("\n✦ Levantando llama-server con aceleración Vulkan y preset calibrado..."))
-    ok, preset_info = start_server_for_model(model_path)
-    if not ok:
-        print(c_red(f"❌ Error al iniciar servidor: {preset_info}"))
-        return None
+    score = max(0, min(score, 100))
+    details = passed + [f"PENDIENTE: {f}" for f in failed]
+    return score, details, passed, failed
 
-    print(c_green("✓ Servidor listo. Enviando prompt estandarizado (Snake Game)..."))
+def estimate_tokens(text):
+    return len(text) // 4
+
+def check_and_compact_context(messages, max_ctx=24000):
+    """
+    Context Compaction: Compacta el historial de conversación cuando excede
+    la ventana segura de contexto, conservando el prompt base, el último código y el reporte de fallos.
+    """
+    total_est = sum(estimate_tokens(m["content"]) for m in messages)
+    if total_est <= (max_ctx - 4000):
+        return messages
+
+    print(c_yellow(f"\n⚡ [Context Compaction Activo]: El historial alcanzó ~{int(total_est)} tokens."))
+    print(c_yellow(f"   Compactando turnos previos para proteger VRAM (8GB) y RAM (16GB)..."))
+
+    if len(messages) <= 3:
+        return messages
+
+    system_msg = messages[0]
+    initial_user = messages[1]
+    last_assistant = messages[-2] if messages[-2]["role"] == "assistant" else messages[-1]
+    last_user_feedback = messages[-1] if messages[-1]["role"] == "user" else None
+
+    summary_text = (
+        "[RESUMEN DE COMPACTACIÓN DE ITERACIONES PREVIAS]:\n"
+        "El modelo ya ha realizado iteraciones de diseño previas del juego Snake.\n"
+        "Se ha descartado el historial intermedio antiguo para liberar ventana de contexto.\n"
+        "Continúa trabajando sobre el último código entregado y las últimas observaciones de pruebas.\n"
+    )
+
+    new_messages = [
+        system_msg,
+        {"role": "user", "content": initial_user["content"]},
+        {"role": "assistant", "content": summary_text + "\nÚltimo código entregado:\n" + last_assistant["content"][-4000:]}
+    ]
+    if last_user_feedback:
+        new_messages.append(last_user_feedback)
+
+    new_est = sum(estimate_tokens(m["content"]) for m in new_messages)
+    print(c_green(f"✓ Contexto reducido de ~{int(total_est)} a ~{int(new_est)} tokens. Espacio libre para nuevas iteraciones.\n"))
+    return new_messages
+
+def build_iteration_feedback(iteration, score, failed_items, previous_code):
+    lines = [
+        f"=== REPORTE DE EVALUACIÓN AUTOMÁTICA DEL HARNESS (ITERACIÓN {iteration}) ===",
+        f"Puntuación alcanzada: {score}/100",
+        "",
+        "FALLOS Y CARENCIAS DETECTADAS EN TU CÓDIGO:"
+    ]
+    for idx, f in enumerate(failed_items, 1):
+        lines.append(f"{idx}. {f}")
     
-    url = "http://127.0.0.1:1234/v1/chat/completions"
+    lines.extend([
+        "",
+        "INSTRUCCIONES OBLIGATORIAS PARA ESTA ITERACIÓN:",
+        "1. Revisa detenidamente el código que entregaste en la iteración previa.",
+        "2. Utiliza tu presupuesto de razonamiento (thinking budget) para diagnosticar la causa exacta de cada uno de los fallos listados arriba.",
+        "3. Soluciona cada fallo asegurando que:",
+        "   - Si hubo errores de sintaxis en JavaScript, queden 100% corregidos.",
+        "   - Si faltaban controles táctiles, implementa el D-Pad virtual en pantalla con eventos touchstart/touchend.",
+        "   - Si faltaba Web Audio API, inicializa AudioContext con osciladores y gain nodes para comer manzana y morir.",
+        "   - La estética retro cyberpunk y el canvas 2D se mantengan limpios y fluidos.",
+        "4. Entrega el archivo HTML autocontenido completo y corregido dentro de un bloque ```html ... ```. Cero placeholders, cero código cortado.",
+        ""
+    ])
+    return "\n".join(lines)
+
+def query_model_streaming(messages, port=1234, max_tokens=STANDARD_MAX_TOKENS):
+    url = f"http://127.0.0.1:{port}/v1/chat/completions"
     payload = {
         "model": "localmodel",
-        "messages": [
-            {"role": "system", "content": "Eres un ingeniero de software senior. Genera código limpio, autocontenido y funcional sin texto conversacional."},
-            {"role": "user", "content": BENCHMARK_PROMPT}
-        ],
+        "messages": messages,
         "temperature": 0.2,
-        "max_tokens": STANDARD_MAX_TOKENS,
+        "max_tokens": max_tokens,
         "stream": True
     }
 
@@ -367,7 +515,6 @@ def run_benchmark_on_model(model_path):
     first_token_time = None
     streamer = ArenaStreamer()
 
-    print(c_cyan("\n✦ Generando respuesta en tiempo real (streaming activo):"))
     try:
         with urllib.request.urlopen(req, timeout=600) as resp:
             for raw_line in resp:
@@ -392,92 +539,249 @@ def run_benchmark_on_model(model_path):
     except Exception as e:
         streamer.close()
         print(c_red(f"\n❌ Error durante streaming: {e}"))
-        kill_server()
-        return None
+        return None, 0, 0, 0.0, 0.0
 
     t_total = time.time() - t0
     ttft = (first_token_time - t0) if first_token_time else 0.0
     completion_tokens = streamer.completion_tokens
     tok_sec = completion_tokens / t_total if t_total > 0 else 0.0
 
-    print(f"\n\n{c_green('✓ Generación completada con éxito!')}")
-    print(f"⏱ Tiempo total: {t_total:.2f} s | TTFT: {ttft:.2f} s")
-    print(f"⚡ Velocidad media: {c_bold(f'{tok_sec:.2f} tok/s')}")
-    print(f"📊 Tokens generados: {completion_tokens} (Pensamiento: {len(streamer.accumulated_thought)} | Código: {len(streamer.accumulated_content)})")
-
     full_output = "".join(streamer.accumulated_content)
     if not full_output.strip() and streamer.accumulated_thought:
         full_output = "".join(streamer.accumulated_thought)
 
-    # Extraer bloque HTML
-    match = re.search(r"```(?:html)?\s*(<!DOCTYPE html[\s\S]*?|<html[\s\S]*?)```", full_output, re.IGNORECASE)
-    if match:
-        html_code = match.group(1).strip()
-    else:
-        # Si no vino en bloque markdown, buscar <html> directamente
-        html_match = re.search(r"(<!DOCTYPE html[\s\S]*?</html>|<html[\s\S]*?</html>)", full_output, re.IGNORECASE)
-        html_code = html_match.group(1).strip() if html_match else full_output.strip()
+    prompt_tokens = sum(len(m["content"]) for m in messages) // 4
+    return full_output, completion_tokens, prompt_tokens, tok_sec, t_total
 
-    # Evaluar calidad de código
-    score, details = evaluate_code(html_code)
+def run_loop_engineering_benchmark(model_path, max_session_tokens=MAX_TEST_TOKEN_BUDGET, max_iterations=4):
+    """
+    Harness de Loop Engineering / TDD iterativo:
+    Ejecuta el modelo, testea el resultado con Node.js y verificadores profundos,
+    le entrega feedback de fallos al modelo y permite que itere hasta alcanzar 100/100
+    o agotar el presupuesto de 100k tokens con auto-compaction.
+    """
+    model_name = model_path.name
+    print(c_cyan(f"\n========================================================"))
+    print(c_yellow(f"🚀 INICIANDO HARNESS LOOP ENGINEERING: {model_name}"))
+    print(c_cyan(f"========================================================"))
+    print(f"📦 Tamaño: {model_path.stat().st_size / (1024**3):.2f} GB")
+    print(f"🧠 Thinking Budget: {STANDARD_THINKING_BUDGET} tokens / iteración")
+    print(f"📤 Ventana Max Output: {STANDARD_MAX_TOKENS} tokens / iteración")
+    print(f"🎯 Presupuesto Total de Sesión: {max_session_tokens:,} tokens")
+    print(f"🔄 Máximo de Iteraciones TDD: {max_iterations}")
 
-    # Guardar archivo generado
+    print(c_blue("\n✦ Levantando llama-server con aceleración Vulkan y preset calibrado..."))
+    ok, preset_info = start_server_for_model(model_path)
+    if not ok:
+        print(c_red(f"❌ Error al iniciar servidor: {preset_info}"))
+        return None
+
+    ctx_limit = int(preset_info.get("AI_CTX_SIZE", "24576")) if isinstance(preset_info, dict) else 24576
+
     model_safe_dir = RESULTS_DIR / model_name.replace(".gguf", "")
     model_safe_dir.mkdir(parents=True, exist_ok=True)
-    out_file = model_safe_dir / "snake.html"
-    with open(out_file, "w", encoding="utf-8") as f:
-        f.write(html_code)
 
-    print(f"💾 Archivo guardado en: {c_cyan(str(out_file))}")
-    print(f"🏆 Puntuación de Calidad: {c_yellow(f'{score}/100')}")
-    for d in details:
-        print(f"   ├─ {d}")
+    messages = [
+        {"role": "system", "content": "Eres un ingeniero de software senior y desarrollador experto en videojuegos web trabajando en un entorno TDD (Test-Driven Development). Genera código limpio, autocontenido y funcional sin texto conversacional superfluo."},
+        {"role": "user", "content": BENCHMARK_PROMPT}
+    ]
 
-    # Liberar memoria de GPU antes de retornar
-    kill_server()
+    total_session_tokens = 0
+    iteration = 1
+    best_score = 0
+    best_code = ""
+    best_details = []
+    total_time = 0.0
+    speeds = []
+
+    try:
+        while iteration <= max_iterations and total_session_tokens < max_session_tokens:
+            print(c_cyan(f"\n──────────────────────────────────────────────────────────"))
+            print(c_yellow(f"🔄 ITERACIÓN {iteration} / {max_iterations}"))
+            print(f"📊 Presupuesto usado: {c_bold(f'{total_session_tokens:,}')} / {max_session_tokens:,} tokens (Restante: {max_session_tokens - total_session_tokens:,})")
+            print(c_cyan(f"──────────────────────────────────────────────────────────"))
+
+            messages = check_and_compact_context(messages, max_ctx=ctx_limit)
+
+            print(c_cyan(f"✦ Generando y razonando en tiempo real (iteración {iteration}):"))
+            output_text, completion_tokens, prompt_tokens, speed, t_iter = query_model_streaming(messages)
+            if output_text is None:
+                print(c_red("❌ Falló la consulta al modelo."))
+                break
+
+            turn_tokens = prompt_tokens + completion_tokens
+            total_session_tokens += turn_tokens
+            total_time += t_iter
+            if speed > 0: speeds.append(speed)
+
+            html_code = extract_html_code(output_text)
+            
+            iter_file = model_safe_dir / f"snake_iter_{iteration}.html"
+            with open(iter_file, "w", encoding="utf-8") as f:
+                f.write(html_code)
+
+            score, details, passed, failed = evaluate_code_deep(html_code)
+
+            print(f"\n\n{c_cyan('══════════════════════════════════════════════════════════')}")
+            print(f"📊 {c_yellow(f'DIAGNÓSTICO AUTOMÁTICO DE ITERACIÓN {iteration}')}: Puntuación {c_bold(f'{score}/100')}")
+            print(c_cyan("══════════════════════════════════════════════════════════"))
+            for p in passed:
+                print(c_green(f"   ✓ {p}"))
+            for f in failed:
+                print(c_red(f"   ❌ {f}"))
+
+            if score > best_score:
+                best_score = score
+                best_code = html_code
+                best_details = details
+                final_file = model_safe_dir / "snake.html"
+                with open(final_file, "w", encoding="utf-8") as f:
+                    f.write(best_code)
+
+            if score == 100:
+                print(c_green(f"\n🎉 ¡PERFECCIÓN ALCANZADA EN ITERACIÓN {iteration}! (100/100 pts)"))
+                print(c_green("El modelo satisfizo absolutamente todos los requerimientos y pasó las pruebas sin errores."))
+                break
+
+            if total_session_tokens >= max_session_tokens:
+                print(c_yellow(f"\n⚠️ Presupuesto total de {max_session_tokens:,} tokens alcanzado. Finalizando ciclo TDD."))
+                break
+
+            if iteration < max_iterations:
+                feedback = build_iteration_feedback(iteration, score, failed, html_code)
+                messages.append({"role": "assistant", "content": output_text})
+                messages.append({"role": "user", "content": feedback})
+                print(c_blue(f"\n✦ Enviando reporte de fallos al modelo para la iteración {iteration + 1}..."))
+
+            iteration += 1
+
+    finally:
+        kill_server()
+
+    avg_speed = sum(speeds) / len(speeds) if speeds else 0.0
+    final_out = model_safe_dir / "snake.html"
+
+    print(c_green(f"\n✓ Torneo finalizado para {model_name}."))
+    print(f"🏆 Puntuación Final: {c_yellow(f'{best_score}/100')}")
+    print(f"💾 Mejor versión guardada en: {c_cyan(str(final_out))}")
+    print(f"📊 Tokens totales consumidos: {total_session_tokens:,} | Velocidad promedio: {avg_speed:.2f} tok/s")
 
     return {
         "model": model_name,
         "size_gb": model_path.stat().st_size / (1024**3),
-        "tokens": completion_tokens,
+        "tokens": total_session_tokens,
+        "time_s": total_time,
+        "speed": avg_speed,
+        "score": best_score,
+        "iterations": min(iteration, max_iterations),
+        "out_file": str(final_out)
+    }
+
+def run_pi_agent_benchmark(model_path):
+    """Ejecuta el harness del agente Pi (@earendil-works/pi-coding-agent) en modo no-interactivo."""
+    model_name = model_path.name
+    print(c_cyan(f"\n========================================================"))
+    print(c_yellow(f"🚀 INICIANDO PI CODING AGENT HARNESS: {model_name}"))
+    print(c_cyan(f"========================================================"))
+    print(f"📦 Tamaño: {model_path.stat().st_size / (1024**3):.2f} GB")
+    print(f"🧠 Pi Thinking Budget: High (8,192 tokens)")
+    print(f"🥧 Compaction: Activa (reserveTokens=16k, keepRecent=20k)")
+    print(f"🎯 Presupuesto de Sesión: {MAX_TEST_TOKEN_BUDGET:,} tokens")
+
+    print(c_blue("\n✦ Levantando llama-server con aceleración Vulkan y preset calibrado..."))
+    ok, preset_info = start_server_for_model(model_path)
+    if not ok:
+        print(c_red(f"❌ Error al iniciar servidor: {preset_info}"))
+        return None
+
+    model_safe_dir = RESULTS_DIR / model_name.replace(".gguf", "")
+    model_safe_dir.mkdir(parents=True, exist_ok=True)
+
+    pi_prompt = (
+        "Eres un ingeniero senior de videojuegos web. Tu misión es crear snake.html en este directorio actual.\n"
+        "Requisitos: juego arcade retro Snake completo en Canvas 2D, Web Audio API sintetizada, localStorage high score, teclado y controles táctiles D-Pad.\n"
+        "Crea el archivo snake.html, inspecciónalo y asegúrate de que no tenga errores de sintaxis y esté 100% completo y funcional."
+    )
+
+    t0 = time.time()
+    env = os.environ.copy()
+    env["LLAMA_BASE_URL"] = "http://127.0.0.1:1234"
+    env["PATH"] = r"C:\Program Files\nodejs;C:\Users\USUARIO\AppData\Roaming\npm;" + env.get("PATH", "")
+
+    pi_cmd = ["pi", "-p", pi_prompt, "--thinking", "high", "--approve"]
+
+    print(c_green("\n✦ Lanzando agente Pi en la terminal...\n"))
+    try:
+        subprocess.run(pi_cmd, cwd=str(model_safe_dir), env=env)
+    except Exception as e:
+        print(c_red(f"Error ejecutando Pi: {e}"))
+    finally:
+        kill_server()
+
+    t_total = time.time() - t0
+
+    out_file = model_safe_dir / "snake.html"
+    code_str = ""
+    if out_file.exists():
+        with open(out_file, "r", encoding="utf-8", errors="ignore") as f:
+            code_str = f.read()
+
+    score, details, passed, failed = evaluate_code_deep(code_str)
+
+    print(f"\n🏆 Puntuación Final alcanzada por Pi: {c_yellow(f'{score}/100')}")
+    for p in passed:
+        print(c_green(f"   ✓ {p}"))
+    for f in failed:
+        print(c_red(f"   ❌ {f}"))
+
+    return {
+        "model": model_name,
+        "size_gb": model_path.stat().st_size / (1024**3),
+        "tokens": 0,
         "time_s": t_total,
-        "speed": tok_sec,
+        "speed": 0.0,
         "score": score,
+        "iterations": 1,
         "out_file": str(out_file)
     }
 
+def run_single_shot_benchmark(model_path):
+    """Ejecuta una única pasada rápida sin iteraciones."""
+    return run_loop_engineering_benchmark(model_path, max_session_tokens=STANDARD_MAX_TOKENS, max_iterations=1)
+
 def print_and_save_leaderboard(results):
     if not results: return
-    # Ordenar por Score y luego por Velocidad
-    results.sort(key=lambda x: (x["score"], x["speed"]), reverse=True)
+    results.sort(key=lambda x: (x["score"], x.get("speed", 0)), reverse=True)
 
-    header = f"\n{c_blue('╔══════════════════════════════════════════════════════════════════════════════════════╗')}\n"
-    header += f"{c_blue('║')} {c_yellow('🏆 LEADERBOARD ARENA DE MODELOS LOCALES (SNAKE BENCHMARK)')}                    {c_blue('║')}\n"
-    header += f"{c_blue('╠══════════════════════════════════════════════════════════════════════════════════════╣')}\n"
+    header = f"\n{c_blue('╔════════════════════════════════════════════════════════════════════════════════════════════════╗')}\n"
+    header += f"{c_blue('║')} {c_yellow('🏆 LEADERBOARD ARENA DE MODELOS LOCALES (LOOP ENGINEERING & HARNESS)')}                 {c_blue('║')}\n"
+    header += f"{c_blue('╠════════════════════════════════════════════════════════════════════════════════════════════════╣')}\n"
     print(header, end="")
 
-    print(f"{'Pos':<4} | {'Modelo':<32} | {'Velocidad':<11} | {'Tiempo':<9} | {'Tokens':<8} | {'Calidad':<8}")
-    print("-" * 88)
+    print(f"{'Pos':<4} | {'Modelo':<30} | {'Calidad':<8} | {'Iter':<5} | {'Tokens':<9} | {'Velocidad':<11} | {'Tiempo':<8}")
+    print("-" * 96)
 
     md_lines = [
-        "# 🏆 Leaderboard Arena de Modelos Locales (Snake Benchmark)",
+        "# 🏆 Leaderboard Arena de Modelos Locales (Loop Engineering Harness)",
         "",
-        "| Pos | Modelo | Tamaño | Velocidad | Tiempo Total | Tokens | Puntuación | Archivo Generado |",
+        "| Pos | Modelo | Puntuación | Iteraciones | Tokens Sesión | Velocidad Media | Tiempo Total | Archivo Generado |",
         "|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---|"
     ]
 
     for idx, r in enumerate(results, 1):
-        m_short = r["model"][:30]
-        speed_str = f"{r['speed']:.2f} t/s"
+        m_short = r["model"][:28]
+        speed_str = f"{r.get('speed', 0):.2f} t/s" if r.get('speed', 0) > 0 else "N/A"
         time_str = f"{r['time_s']:.1f} s"
         score_str = f"{r['score']}/100"
-        
-        print(f"{idx:<4} | {m_short:<32} | {c_green(speed_str):<20} | {time_str:<9} | {r['tokens']:<8} | {c_yellow(score_str):<16}")
-        
-        rel_path = f"benchmarks/arena/{Path(r['out_file']).parent.name}/snake.html"
-        md_lines.append(f"| {idx} | **{r['model']}** | {r['size_gb']:.2f} GB | **{speed_str}** | {time_str} | {r['tokens']} | **{score_str}** | [{Path(r['out_file']).name}]({rel_path}) |")
+        iters_str = str(r.get("iterations", 1))
+        tokens_str = f"{r.get('tokens', 0):,}"
 
-    print(c_blue("╚══════════════════════════════════════════════════════════════════════════════════════╝\n"))
+        print(f"{idx:<4} | {m_short:<30} | {c_yellow(score_str):<16} | {iters_str:<5} | {tokens_str:<9} | {c_green(speed_str):<20} | {time_str:<8}")
+
+        rel_path = f"benchmarks/arena/{Path(r['out_file']).parent.name}/snake.html"
+        md_lines.append(f"| {idx} | **{r['model']}** | **{score_str}** | {iters_str} | {tokens_str} | {speed_str} | {time_str} | [{Path(r['out_file']).name}]({rel_path}) |")
+
+    print(c_blue("╚════════════════════════════════════════════════════════════════════════════════════════════════╝\n"))
 
     md_file = RESULTS_DIR / "LEADERBOARD.md"
     with open(md_file, "w", encoding="utf-8") as f:
@@ -502,7 +806,7 @@ def main():
     print(f"  {c_green('A) Correr TODOS en modo Torneo Automático (Full Arena)')}")
     print(f"  0) Salir")
 
-    opt = input("\nElige una opción [A, 1-N, 0]: ").strip()
+    opt = input("\nElige el modelo o torneo [A, 1-N, 0]: ").strip()
     if opt == "0" or not opt:
         sys.exit(0)
 
@@ -515,9 +819,23 @@ def main():
         print(c_red("Opción inválida."))
         sys.exit(1)
 
+    print(c_yellow("\nModos de Harness de Evaluación:"))
+    print(f"  1) {c_green('🔄 Loop Engineering Harness')} (Auto-testing iterativo TDD, 100k budget, auto-compaction) [RECOMENDADO]")
+    print(f"  2) {c_cyan('🥧 Pi Coding Agent Harness')} (Agente Pi con herramientas completas de archivo y shell)")
+    print(f"  3) {c_yellow('⚡ Single-Shot')} (1 pasada directa)")
+
+    mode_opt = input("\nElige el modo [1/2/3, Enter=1]: ").strip()
+    if not mode_opt: mode_opt = "1"
+
     results = []
     for m in selected_models:
-        res = run_benchmark_on_model(m)
+        if mode_opt == "2":
+            res = run_pi_agent_benchmark(m)
+        elif mode_opt == "3":
+            res = run_single_shot_benchmark(m)
+        else:
+            res = run_loop_engineering_benchmark(m)
+
         if res:
             results.append(res)
 
