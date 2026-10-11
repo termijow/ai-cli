@@ -85,18 +85,30 @@ def kill_server():
     subprocess.run(["taskkill", "/F", "/IM", "llama-server.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
 
-def wait_for_server(port=1234, timeout=45):
+def wait_for_server(proc=None, port=1234, timeout=75):
     start = time.time()
     url = f"http://127.0.0.1:{port}/health"
+    log_file = PROJECT_ROOT / "llama-server.log"
     while time.time() - start < timeout:
+        if proc and proc.poll() is not None:
+            err_snippet = "Proceso terminado con código de error."
+            if log_file.exists():
+                try:
+                    lines = [l.strip() for l in log_file.read_text(encoding="utf-8", errors="ignore").splitlines() if l.strip()]
+                    if lines:
+                        err_snippet = "\n   ".join(lines[-4:])
+                except Exception:
+                    pass
+            return False, f"El servidor falló al iniciar (código {proc.returncode}):\n   {err_snippet}"
+
         try:
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=2) as resp:
                 if resp.status == 200:
-                    return True
+                    return True, "OK"
         except Exception:
             time.sleep(1)
-    return False
+    return False, "El servidor no respondió a tiempo dentro del timeout permitido."
 
 def load_preset_for_model(model_name):
     stem = model_name.replace(".gguf", "")
@@ -180,18 +192,22 @@ def start_server_for_model(model_path):
         "--predict", str(STANDARD_MAX_TOKENS)
     ]
 
-    if mtp == "on" or "mtp" in name.lower():
+    if mtp.lower() == "on" and ("mtp" in name.lower() or "qwen3.6" in name.lower()):
         cmd.extend(["--spec-type", "draft-mtp", "--spec-draft-n-max", str(mtp_draft)])
+
+    log_file = PROJECT_ROOT / "llama-server.log"
+    log_f = open(log_file, "w", encoding="utf-8", errors="replace")
 
     proc = subprocess.Popen(
         cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_f,
+        stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     )
 
-    if not wait_for_server(port=1234, timeout=40):
-        return False, "El servidor no respondió a tiempo."
+    ok, msg = wait_for_server(proc=proc, port=1234, timeout=75)
+    if not ok:
+        return False, msg
     return True, preset
 
 class ArenaStreamer:

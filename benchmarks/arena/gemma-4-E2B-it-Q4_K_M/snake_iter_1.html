@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cyber Snake Arcade</title>
+    <style>
+        body {
+            background-color: #0a0a1a;
+            color: #00ffcc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Monospace', sans-serif;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        canvas {
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 20px #00ffcc, inset 0 0 10px #00ffcc50;
+            background-color: #000000;
+            touch-action: none; /* Previene scroll en móvil */
+        }
+        #game-container {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 1.2em;
+            text-shadow: 0 0 5px #ff00ff;
+        }
+        #game-over-screen, #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 100;
+        }
+        .screen-content {
+            padding: 20px;
+            border: 3px solid #ff00ff;
+            box-shadow: 0 0 30px #ff00ff;
+        }
+        button {
+            background: #00ffcc;
+            color: #0a0a1a;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-family: inherit;
+            text-shadow: 0 0 5px #00ffcc;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #00e6b8;
+        }
+        h1 {
+            color: #ff00ff;
+            text-shadow: 0 0 10px #ff00ff;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div id="hud">Score: 0 | High Score: 0</div>
+        
+        <div id="start-screen">
+            <h1>CYBER SNAKE</h1>
+            <p>Controles: Flechas/WASD o D-Pad táctil</p>
+            <button onclick="startGame()">Start Game</button>
+        </div>
+
+        <div id="game-over-screen" style="display: none;">
+            <h1>GAME OVER</h1>
+            <p id="final-score"></p>
+            <button onclick="resetGame()">Restart</button>
+            <button onclick="pauseGame()">Pause</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const hud = document.getElementById('hud');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const startScreen = document.getElementById('start-screen');
+        const finalScoreDisplay = document.getElementById('final-score');
+
+        // --- Configuración del Juego ---
+        const GRID_SIZE = 20;
+        const TILE_COUNT = 30;
+        const CANVAS_WIDTH = TILE_COUNT * GRID_SIZE;
+        const CANVAS_HEIGHT = TILE_COUNT * GRID_SIZE;
+
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+
+        let gameLoopId = null;
+        let isRunning = false;
+        let isPaused = false;
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('snakeHighScore') || 0);
+        let snake = [];
+        let food = {};
+        let dx = GRID_SIZE; // Dirección inicial: derecha
+        let dy = 0;
+        let gameSpeed = 150; // ms per tick (1000/150 = ~6.6 TPS)
+        let lastUpdateTime = 0;
+        let particles = [];
+        let animationFrameId = null;
+
+        // --- Web Audio API Setup ---
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(frequency, duration, type = 'sine', volume = 0.3) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + duration / 1000);
+        }
+
+        function playEatSound() {
+            playSound(440, 50, 'square', 0.5); // High tone
+        }
+
+        function playDeathSound() {
+            // Simple noise burst for impact
+            const buffer = audioContext.createBuffer(1, 44100 * 0.1, 44100);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.start();
+        }
+
+        // --- Inicialización y Control de Estado ---
+
+        function initializeGame() {
+            snake = [{ x: 10, y: 10 }];
+            dx = GRID_SIZE;
+            dy = 0;
+            score = 0;
+            gameSpeed = 150;
+            updateHUD();
+            
+            generateFood();
+            gameOverScreen.style.display = 'none';
+            startScreen.style.display = 'none';
+            isRunning = true;
+            lastUpdateTime = performance.now();
+            
+            if (gameLoopId) cancelAnimationFrame(gameLoopId);
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            initializeGame();
+        }
+
+        function resetGame() {
+            initializeGame();
+        }
+
+        function pauseGame() {
+            isPaused = !isPaused;
+            if (isPaused) {
+                cancelAnimationFrame(gameLoopId);
+                // Optionally show a pause overlay
+            } else {
+                lastUpdateTime = performance.now();
+                gameLoopId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function updateHUD() {
+            hud.innerHTML = `Score: ${score} | High Score: ${highScore}`;
+        }
+
+        // --- Lógica del Juego ---
+
+        function generateFood() {
+            let newFood;
+            do {
+                newFood = {
+                    x: Math.floor(Math.random() * TILE_COUNT),
+                    y: Math.floor(Math.random() * TILE_COUNT)
+                };
+            } while (isFoodOnSnake(newFood));
+            food = newFood;
+        }
+
+        function isFoodOnSnake(pos) {
+            return snake.some(segment => segment.x === pos.x && segment.y === pos.y);
+        }
+
+        function checkCollision() {
+            const head = snake[0];
+
+            // Wall collision
+            if (head.x < 0 || head.x >= TILE_COUNT || head.y < 0 || head.y >= TILE_COUNT) {
+                endGame();
+                return true;
+            }
+
+            // Self collision (check body segments starting from the second one)
+            for (let i = 1; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) {
+                    endGame();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function moveSnake() {
+            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+            snake.unshift(head);
+
+            if (head.x === food.x && head.y === food.y) {
+                score++;
+                playEatSound();
+                generateFood();
+                // Speed up slightly every few points
+                if (score % 5 === 0 && gameSpeed > 50) {
+                    gameSpeed -= 10;
+                }
+            } else {
+                snake.pop();
+            }
+        }
+
+        function endGame() {
+            isRunning = false;
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('snakeHighScore', highScore);
+            }
+            
+            cancelAnimationFrame(gameLoopId);
+            gameLoopId = null;
+
+            finalScoreDisplay.textContent = `Your Score: ${score}. High Score: ${highScore}`;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        // --- Efectos Visuales ---
+
+        function createParticle(x, y) {
+            particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                life: 60,
+                size: Math.random() * 3 + 1,
+                color: '#00ffcc',
+                friction: 0.98
+            });
+        }
+
+        function updateParticles() {
+            particles = particles.filter(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vx *= p.friction;
+                p.vy *= p.friction;
+                p.life--;
+                return p.life > 0;
+            });
+        }
+
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.fillStyle = `rgba(0, 255, 204, ${p.life / 60})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function screenShake(intensity = 5, duration = 100) {
+            const shakeStartTime = performance.now();
+            const shakeEnd = shakeStartTime + duration;
+            
+            let shakeIntensity = 0;
+
+            function shake() {
+                if (performance.now() < shakeEnd) {
+                    const timeElapsed = performance.now() - shakeStartTime;
+                    const progress = timeElapsed / duration;
+                    
+                    // Random displacement based on intensity
+                    const offsetX = (Math.random() - 0.5) * intensity * (1 - progress);
+                    const offsetY = (Math.random() - 0.5) * intensity * (1 - progress);
+
+                    ctx.save();
+                    ctx.translate(offsetX, offsetY);
+                    ctx.restore();
+                    requestAnimationFrame(shake);
+                }
+            }
+            shake();
+        }
+
+        // --- Dibujado ---
+
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(0, 255, 204, 0.1)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x < TILE_COUNT; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * GRID_SIZE, 0);
+                ctx.lineTo(x * GRID_SIZE, CANVAS_HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y < TILE_COUNT; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * GRID_SIZE);
+                ctx.lineTo(CANVAS_WIDTH, y * GRID_SIZE);
+                ctx.stroke();
+            }
+        }
+
+        function drawSnake() {
+            snake.forEach((segment, index) => {
+                // Head effect (brighter neon)
+                ctx.fillStyle = index === 0 ? '#ffffff' : '#00ffcc';
+                ctx.shadowColor = index === 0 ? '#ffffff' : '#00ffcc';
+                ctx.shadowBlur = index === 0 ? 15 : 5;
+
+                ctx.fillRect(segment.x * GRID_SIZE, segment.y * GRID_SIZE, GRID_SIZE - 1, GRID_SIZE - 1);
+            });
+            ctx.shadowBlur = 0; // Reset shadow
+        }
+
+        function drawFood() {
+            ctx.fillStyle = '#ff00ff'; // Magenta food
+            ctx.shadowColor = '#ff00ff';
+            ctx.shadowBlur = 10;
+            ctx.fillRect(food.x * GRID_SIZE, food.y * GRID_SIZE, GRID_SIZE - 1, GRID_SIZE - 1);
+            ctx.shadowBlur = 0;
+        }
+
+        function draw() {
+            // 1. Limpiar pantalla
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // 2. Dibujar elementos
+            drawGrid();
+            drawFood();
+            drawSnake();
+            drawParticles();
+        }
+
+        // --- Bucle Principal ---
+
+        function gameLoop(timestamp) {
+            if (!isRunning || isPaused) return;
+
+            const deltaTime = timestamp - lastUpdateTime;
+
+            if (deltaTime > gameSpeed) {
+                // Update logic runs based on gameSpeed interval
+                moveSnake();
+                checkCollision();
+                updateHUD();
+            }
+
+            draw();
+
+            lastUpdateTime = timestamp;
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- Control de Entrada (Input Handling) ---
+
+        const KEY_MAP = {
+            ArrowUp: { dx: 0, dy: -GRID_SIZE },
+            ArrowDown: { dx: 0, dy: GRID_SIZE },
+            ArrowLeft: { dx: -GRID_SIZE, dy: 0 },
+            ArrowRight: { dx: GRID_SIZE, dy: 0 },
+            w: { dx: 0, dy: -GRID_SIZE },
+            a: { dx: -GRID_SIZE, dy: 0 },
+            s: { dx: 0, dy: GRID_SIZE },
+            d: { dx: GRID_SIZE, dy: 0 }
+        };
+
+        function handleKeyPress(e) {
+            if (!isRunning || isPaused) return;
+
+            let newDx = dx;
+            let newDy = dy;
+
+            switch (e.key) {
+                case 'ArrowUp':
+                case 'w':
+                    if (dy === 0) { newDx = 0; newDy = -GRID_SIZE; }
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    if (dy === 0) { newDx = 0; newDy = GRID_SIZE; }
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                    if (dx === 0) { newDx = -GRID_SIZE; newDy = 0; }
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    if (dx === 0) { newDx = GRID_SIZE; newDy = 0; }
+                    break;
+            }
+            
+            dx = newDx;
+            dy = newDy;
+        }
+
+        // Touch Controls Setup
+        const touchControls = {
+            up: { x: 0, y: 0 },
+            down: { x: 0, y: 0 },
+            left: { x: 0, y: 0 },
+            right: { x: 0, y: 0 }
+        };
+
+        function setupTouchListeners() {
+            const touchArea = canvas.getBoundingClientRect();
+
+            const handleTouchStart = (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const touchX = touch.clientX - touchArea.left;
+                const touchY = touch.clientY - touchArea.top;
+
+                // Simple D-Pad zones (e.g., quadrants)
+                if (touchY < touchArea.height / 2) {
+                    if (touchX < touchArea.width / 4) touchControls.left.x = 1;
+                    else if (touchX > touchArea.width * 3 / 4) touchControls.right.x = 1;
+                } else {
+                    if (touchX < touchArea.width / 4) touchControls.left.x = 1;
+                    else if (touchX > touchArea.width * 3 / 4) touchControls.right.x = 1;
+                }
+                
+                if (touchY < touchArea.height / 2) {
+                    if (touchX < touchArea.width / 4) touchControls.up.y = 1;
+                    else if (touchX > touchArea.width * 3 / 4) touchControls.down.y = 1;
+                } else {
+                    if (touchX < touchArea.width / 4) touchControls.up.y = 1;
+                    else if (touchX > touchArea.width * 3 / 4) touchControls.down.y = 1;
+                }
+            };
+
+            const handleTouchEnd = (e) => {
+                // Reset controls on touch end
+                touchControls.up.y = 0;
+                touchControls.down.y = 0;
+                touchControls.left.x = 0;
+                touchControls.right.x = 0;
+            };
+
+            canvas.addEventListener('touchstart', handleTouchStart);
+            canvas.addEventListener('touchend', handleTouchEnd);
+            canvas.addEventListener('touchmove', (e) => {
+                // Prevent scrolling while touching canvas
+                e.preventDefault(); 
+                // In a more complex system, this would update continuous movement.
+                // For simplicity, we rely on the start/end detection for directional input.
+            });
+        }
+
+        // --- Inicialización Final ---
+
+        window.addEventListener('keydown', handleKeyPress);
+        setupTouchListeners();
+
+        // Initial draw setup (show start screen)
+        draw(); 
+
+    </script>
+</body>
+</html>

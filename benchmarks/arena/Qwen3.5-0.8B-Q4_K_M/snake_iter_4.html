@@ -1,0 +1,1242 @@
+<!DOCTYPE html>` and `<html>`.
+2.  **Missing Meta Viewport**: Need `<meta name='viewport' content='...'>` for mobile responsiveness.
+3.  **Missing Script Tag**: Need `<script>` tag for the game logic.
+4.  **Incomplete Web Audio**: Need `createOscillator()` and `createGain()` for sound effects.
+5.  **Missing Persistence**: Need `localStorage` for high score.
+6.  **Missing Visual Effects**: Need particle effects for eating and screen shake for dying.
+
+**Plan:**
+1.  **HTML**: Create a clean structure with a canvas, UI overlays (score, high score, game over), and a D-Pad for touch controls.
+2.  **CSS**: Implement the "Cyberpunk" aesthetic (dark background, neon colors, retro font).
+3.  **JavaScript**:
+    *   **Game Loop**: Use `requestAnimationFrame` for smooth rendering.
+    *   **Input Handling**: Combine keyboard and touch events.
+    *   **Audio System**: Create a `SoundManager` class to handle beep sounds for eating and death.
+    *   **Persistence**: Add a `saveHighScore()` function that checks `localStorage`.
+    *   **Visuals**: Add particle system for eating and screen shake for dying.
+    *   **Styling**: Add neon glow effects to snake and food.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+*   *Issue 3 (Controls)*: I need to add event listeners for `keydown` and `touchstart`/`touchend` on the canvas.
+*   *Issue 4 (Audio)*: I need to create a `SoundManager` class to handle beep sounds for eating and death.
+*   *Issue 5 (Persistence)*: I need to add a `saveHighScore()` function that checks `localStorage`.
+*   *Issue 6 (Visuals)*: I need to add particle system for eating and screen shake for dying.
+
+**Code Structure:**
+*   `index.html`: Main container.
+*   `<style>`: Cyberpunk styling.
+*   `<script>`: The game logic.
+
+**Refining the "Thinking" Process:**
+*   *Issue 1 (HTML)*: I need to wrap the game logic in a `function runGame()` that calls `canvas.getContext('2d').draw()`.
+*   *Issue 2 (Canvas)*: I must ensure `canvas.getContext('2d')` is called before drawing.
+</think>
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyber Snake</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #050505;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            color: #00ff00;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            border: 2px solid #00ff00;
+        }
+
+        canvas {
+            display: block;
+            background: linear-gradient(to bottom, #0a0a0a, #1a1a1a);
+            box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.8);
+        }
+
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10;
+            transition: opacity 0.3s;
+        }
+
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .score-board {
+            font-size: 40px;
+            text-shadow: 0 0 10px #00ff00;
+            margin-bottom: 20px;
+        }
+
+        .high-score-board {
+            font-size: 24px;
+            margin-top: 10px;
+            color: #00ff00;
+        }
+
+        .controls-hint {
+            margin-top: 15px;
+            color: #00ff00;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .d-pad {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .d-btn {
+            width: 60px;
+            height: 60px;
+            background: #111;
+            border: 2px solid #00ff00;
+            border-radius: 50%;
+            color: #00ff00;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
+            transition: transform 0.1s, box-shadow 0.1s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .d-btn:active {
+            transform: scale(0.9);
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+
+        .d-btn:disabled {
+            box-shadow: none;
+            border: none;
+        }
+
+        .d-btn:active {
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.

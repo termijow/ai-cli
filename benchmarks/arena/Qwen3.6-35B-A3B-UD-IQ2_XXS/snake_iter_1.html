@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+   <html lang="es">
+   <head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+   <title>Cyber Snake</title>
+   <style>
+     /* CSS Reset & Cyberpunk Theme */
+     body { margin: 0; padding: 0; background: #05050a; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+     canvas { border: 2px solid #00ff41; box-shadow: 0 0 20px #00ff4144; background: #0a0a12; image-rendering: pixelated; }
+     #ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; text-shadow: 0 0 5px #00ff41; }
+     #gameOver, #pause { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(5, 5, 10, 0.9); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+     .btn { background: #00ff41; color: #05050a; border: none; padding: 10px 20px; margin: 10px; font-size: 16px; font-family: inherit; cursor: pointer; box-shadow: 0 0 10px #00ff41; }
+     .btn:hover { background: #00cc33; }
+     #touchControls { position: absolute; bottom: 20px; display: grid; grid-template-columns: repeat(3, 60px); grid-template-rows: repeat(2, 60px); gap: 10px; pointer-events: auto; }
+     .dpad-btn { background: rgba(0, 255, 65, 0.2); border: 2px solid #00ff41; color: #00ff41; font-size: 24px; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none; }
+     .dpad-btn:active { background: rgba(0, 255, 65, 0.5); }
+     #up { grid-column: 2; grid-row: 1; }
+     #left { grid-column: 1; grid-row: 2; }
+     #down { grid-column: 2; grid-row: 2; }
+     #right { grid-column: 3; grid-row: 2; }
+   </style>
+   </head>
+   <body>
+     <div id="ui">SCORE: <span id="score">0</span> | HIGH: <span id="highScore">0</span></div>
+     <canvas id="gameCanvas"></canvas>
+     <div id="gameOver">
+       <h1>GAME OVER</h1>
+       <p>SCORE: <span id="finalScore">0</span></p>
+       <button class="btn" id="restartBtn">REINICIAR</button>
+       <button class="btn" id="pauseBtn">PAUSA</button>
+     </div>
+     <div id="touchControls">
+       <div class="dpad-btn" id="up">▲</div>
+       <div class="dpad-btn" id="left">◀</div>
+       <div class="dpad-btn" id="down">▼</div>
+       <div class="dpad-btn" id="right">▶</div>
+     </div>
+     <script>
+       // JS Implementation
+     </script>
+   </body>
+   </html>
