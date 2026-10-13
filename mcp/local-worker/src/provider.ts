@@ -93,6 +93,43 @@ export function buildWorkerPrompt(
   ].join("\n");
 }
 
+export function buildRepairPrompt(
+  task: string,
+  worktreePath: string,
+  relevantFiles: string[],
+  acceptanceCriteria: string[],
+  testCommand: string | undefined,
+  errors: string[],
+  repairIteration: number,
+  maxRepairIterations: number,
+): string {
+  const errorList = errors.map((err, idx) => `${idx + 1}. ${err}`).join("\n");
+  const test = testCommand ?? "No hay comando de prueba proporcionado.";
+
+  return [
+    "Sos un worker local de código.",
+    `¡ATENCIÓN! La verificación automática falló en la iteración previa. Esta es la ronda de autoreparación ${repairIteration} de ${maxRepairIterations}.`,
+    "Trabajá exclusivamente dentro de este worktree: " + worktreePath,
+    "No uses ni modifiques rutas fuera del worktree.",
+    "",
+    "OBJETIVO ORIGINAL",
+    task,
+    "",
+    "FALLOS DETECTADOS QUE DEBES CORREGIR:",
+    errorList,
+    "",
+    "VALIDACIÓN SOLICITADA",
+    test,
+    "",
+    "INSTRUCCIONES DE CORRECCIÓN:",
+    "- Inspeccioná el código que escribiste y corregí la causa raíz exacta de cada error reportado.",
+    "- Asegurate de que no queden variables fuera de ámbito (scope), ni funciones indefinidas, ni overlays con 'pointer-events: none' bloqueando clicks de botones.",
+    "- No agregues archivos fuera de las rutas permitidas.",
+    "- Antes de terminar, asegurate de que todo el código sea 100% sintáctica y funcionalmente válido.",
+    "- Dejá los cambios listos en el working tree sin commits.",
+  ].join("\n");
+}
+
 export function providerInvocation(
   provider: WorkerConfig["provider"],
   config: WorkerConfig,

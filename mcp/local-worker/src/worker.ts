@@ -9,8 +9,9 @@ import type {
 } from "./types.js";
 import { allowedTestCommand, runCommand } from "./command.js";
 import { GitClient } from "./git.js";
-import { buildWorkerPrompt, runProvider } from "./provider.js";
+import { buildRepairPrompt, buildWorkerPrompt, runProvider } from "./provider.js";
 import { assertAllowedDirectory, assertRelativeFile } from "./security.js";
+import { verifyWorktreeFiles, type VerificationReport } from "./verifier.js";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -215,26 +216,11 @@ export class LocalWorker {
         );
       }
       const maxChangedFiles = input.max_changed_files ?? this.config.maxChangedFiles;
-      const prompt = buildWorkerPrompt(
-        input.task,
-        worktreePath,
-        relevantFiles,
-        acceptanceCriteria,
-        input.test_command,
-        maxIterations,
-        maxChangedFiles,
-      );
-      const providerResult = await runProvider(
-        this.config.provider,
-        this.config,
-        prompt,
-        maxIterations,
-        worktreePath,
-        this.runner,
-      );
+      const maxRepairIterations = input.max_repair_iterations ?? 2;
+      const verifyRuntime = input.verify_runtime ?? true;
 
       const allowedFiles = new Set(relevantFiles.map((file) => file.replaceAll("\\", "/")));
-      const validateScope = async (): Promise<void> => {
+      const validateScope = async (): Promise<string[]> => {
         const changedFiles = await this.git.workingTreeFiles(worktreePath, baseSha);
         const unlistedFiles = relevantFiles.length
           ? changedFiles.filter((file) => !allowedFiles.has(file))
@@ -248,28 +234,122 @@ export class LocalWorker {
             `La tarea excedió su alcance (${details}). El worker no hará commit; dividí la tarea en subtareas por archivo. Worktree: ${worktreePath}`,
           );
         }
+        return changedFiles;
       };
 
+      const prompt = buildWorkerPrompt(
+        input.task,
+        worktreePath,
+        relevantFiles,
+        acceptanceCriteria,
+        input.test_command,
+        maxIterations,
+        maxChangedFiles,
+      );
+      let providerResult = await runProvider(
+        this.config.provider,
+        this.config,
+        prompt,
+        maxIterations,
+        worktreePath,
+        this.runner,
+      );
+
+      let repairIteration = 0;
+      let test: TestResult | null = null;
+      let verification: VerificationReport = {
+        passed: true,
+        syntaxOk: true,
+        runtimeOk: true,
+        errors: [],
+        warnings: [],
+      };
+
+      // Loop Engineering Verification & Self-Correction Harness
+      while (repairIteration <= maxRepairIterations) {
+        const changedFiles = await validateScope();
+
+        // 1. Static Syntax & Simulated DOM Runtime Checks
+        if (verifyRuntime && changedFiles.length > 0) {
+          verification = await verifyWorktreeFiles(worktreePath, changedFiles, this.runner);
+        } else {
+          verification = { passed: true, syntaxOk: true, runtimeOk: true, errors: [], warnings: [] };
+        }
+
+        // 2. External Automated Test Command
+        test = input.test_command
+          ? await this.runTest(input.test_command, worktreePath)
+          : null;
+
+        if (test && !test.passed) {
+          verification.passed = false;
+          verification.errors.push(
+            `Validación externa fallida (${test.command}):\n${test.output}`,
+          );
+        }
+
+        if (providerResult.code !== 0 || providerResult.timedOut) {
+          verification.passed = false;
+          verification.errors.push(
+            `El proveedor de IA terminó con error (código ${providerResult.code}${providerResult.timedOut ? " por timeout" : ""}):\n${providerResult.stderr}`,
+          );
+        }
+
+        // Si pasó todas las pruebas y verificaciones, salir del bucle con éxito
+        if (verification.passed) {
+          break;
+        }
+
+        // Si falló pero quedan iteraciones de autoreparación, retroalimentar el error
+        if (repairIteration < maxRepairIterations) {
+          repairIteration++;
+          const repairPrompt = buildRepairPrompt(
+            input.task,
+            worktreePath,
+            relevantFiles,
+            acceptanceCriteria,
+            input.test_command,
+            verification.errors,
+            repairIteration,
+            maxRepairIterations,
+          );
+
+          providerResult = await runProvider(
+            this.config.provider,
+            this.config,
+            repairPrompt,
+            maxIterations,
+            worktreePath,
+            this.runner,
+          );
+        } else {
+          break;
+        }
+      }
+
       await validateScope();
 
-      const test = input.test_command
-        ? await this.runTest(input.test_command, worktreePath)
+      const success =
+        verification.passed &&
+        providerResult.code === 0 &&
+        !providerResult.timedOut &&
+        (!test || test.passed);
+
+      const commit = success
+        ? await this.git.ensureCommit(
+            worktreePath,
+            baseSha,
+            "agent: complete " + taskId,
+          )
         : null;
-      // Tests can generate snapshots, coverage or other files; enforce scope again
-      // immediately before staging so those artifacts can never enter the commit.
-      await validateScope();
-      const commit = await this.git.ensureCommit(
-        worktreePath,
-        baseSha,
-        "agent: complete " + taskId,
-      );
+
       const filesChanged = commit
         ? await this.git.changedFiles(worktreePath, baseSha)
         : [];
       const diffStat = commit
         ? await this.git.diffStat(worktreePath, baseSha)
         : "";
-      const warnings: string[] = [];
+      const warnings: string[] = [...verification.warnings];
 
       if (providerResult.code !== 0 || providerResult.timedOut) {
         warnings.push(
@@ -284,12 +364,13 @@ export class LocalWorker {
       if (test && !test.passed) {
         warnings.push("La validación externa falló.");
       }
-      if (!commit) warnings.push("El worker no produjo cambios para commit.");
+      if (!verification.passed) {
+        warnings.push(...verification.errors);
+      }
+      if (!commit && success) {
+        warnings.push("El worker no produjo cambios para commit.");
+      }
 
-      const success =
-        providerResult.code === 0 &&
-        !providerResult.timedOut &&
-        (!test || test.passed);
       let cleanupPerformed = false;
       if (success && input.keep_worktree === false) {
         await this.git.removeWorktree(repoRoot, worktreePath);
@@ -308,6 +389,13 @@ export class LocalWorker {
         worktree_path: worktreePath,
         test,
         git_diff_stat: diffStat,
+        verified: success,
+        repair_iterations_used: repairIteration,
+        verification: {
+          syntax_ok: verification.syntaxOk,
+          runtime_ok: verification.runtimeOk,
+          errors: verification.errors,
+        },
         warnings,
         cleanup_performed: cleanupPerformed,
       };

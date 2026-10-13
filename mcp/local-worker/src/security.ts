@@ -37,10 +37,11 @@ export async function assertAllowedDirectory(
 }
 
 export function assertRelativeFile(file: string): void {
+  const normalized = file.replaceAll("\\", "/");
   if (
     path.isAbsolute(file) ||
-    file === ".." ||
-    file.startsWith(".." + path.sep) ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
     file.includes("\0")
   ) {
     throw new Error("relevant_files contiene una ruta insegura: " + file);

@@ -82,6 +82,89 @@ describe("LocalWorker", () => {
     expect(result.git_diff_stat).toContain("worker.txt");
     expect(result.test?.passed).toBe(true);
     expect(result.worktree_path).toContain("worktrees");
+    expect(result.verified).toBe(true);
+    expect(result.repair_iterations_used).toBe(0);
+  });
+
+  it("self-heals code through Loop Engineering when initial code has runtime errors", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-worker-repair-"));
+    temporaryDirectories.push(root);
+    const repo = path.join(root, "repo");
+    await fs.mkdir(repo);
+
+    const git = async (args: string[]) =>
+      runCommand("git", args, { cwd: repo, timeoutMs: 10_000 });
+    await git(["init", "-q"]);
+    await git(["config", "user.name", "Local Worker Test"]);
+    await git(["config", "user.email", "worker-test@example.invalid"]);
+    await fs.writeFile(path.join(repo, "README.md"), "base\n");
+    await git(["add", "--all"]);
+    await git(["commit", "-m", "base", "-q"]);
+
+    const config: WorkerConfig = {
+      provider: "qwen",
+      allowedRoots: [root],
+      worktreeRoot: path.join(root, "worktrees"),
+      qwenBin: "fake-provider",
+      qwenModel: "test-model",
+      qwenApprovalMode: "auto",
+      opencodeBin: "opencode",
+      opencodeModel: "test-model",
+      opencodeAgent: "local-worker",
+      maxConcurrent: 1,
+      timeoutMs: 30_000,
+      testTimeoutMs: 30_000,
+      allowTestCommands: true,
+      requireCleanBase: true,
+      maxOutputChars: 10_000,
+      defaultMaxIterations: 6,
+      maxIterations: 12,
+      maxChangedFiles: 2,
+      maxRelevantFiles: 5,
+    };
+
+    let callCount = 0;
+    const runner: CommandRunner = async (file, args, options) => {
+      if (file === "fake-provider") {
+        callCount++;
+        const targetHtml = path.join(options.cwd, "index.html");
+        if (callCount === 1) {
+          // Attempt 1: write HTML with scoping/runtime error (buttons out of scope)
+          await fs.writeFile(
+            targetHtml,
+            `<html><body><script>(() => { const btns = [1]; })(); btns.forEach(b => console.log(b));</script></body></html>`,
+          );
+        } else {
+          // Attempt 2 (Repair): fix scoping error
+          await fs.writeFile(
+            targetHtml,
+            `<html><body><script>const btns = [1]; btns.forEach(b => console.log(b));</script></body></html>`,
+          );
+        }
+        return {
+          code: 0,
+          signal: null,
+          stdout: JSON.stringify({ summary: "Iteración completada." }),
+          stderr: "",
+          timedOut: false,
+        };
+      }
+      return runCommand(file, args, options);
+    };
+
+    const worker = new LocalWorker(config, runner);
+    const result = await worker.delegate({
+      task: "Crear index.html funcional sin errores de runtime.",
+      working_directory: repo,
+      max_repair_iterations: 2,
+      verify_runtime: true,
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.verified).toBe(true);
+    expect(result.repair_iterations_used).toBe(1);
+    expect(result.files_changed).toEqual(["index.html"]);
+    expect(callCount).toBe(2);
   });
 });
 

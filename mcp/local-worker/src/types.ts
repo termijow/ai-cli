@@ -7,6 +7,8 @@ export interface DelegateTaskInput {
   acceptance_criteria?: string[];
   test_command?: string;
   max_iterations?: number;
+  max_repair_iterations?: number;
+  verify_runtime?: boolean;
   max_changed_files?: number;
   keep_worktree?: boolean;
   base_ref?: string;
@@ -86,6 +88,13 @@ export interface DelegateTaskResult {
   worktree_path: string;
   test: TestResult | null;
   git_diff_stat: string;
+  verified: boolean;
+  repair_iterations_used: number;
+  verification?: {
+    syntax_ok: boolean;
+    runtime_ok: boolean;
+    errors: string[];
+  };
   warnings: string[];
   cleanup_performed: boolean;
 }

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Cyber Snake Arcade</title>
+    <style>
+        body {
+            background-color: #0a0a1a;
+            color: #00ff99;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        #gameCanvas {
+            border: 2px solid #00ff99;
+            box-shadow: 0 0 20px #00ff99, inset 0 0 10px #00ff9980;
+            background-color: #000000;
+            touch-action: none; /* Previene el scroll en móvil */
+        }
+        #overlay {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10;
+            pointer-events: none; /* Por defecto, permite clics al canvas si no hay overlay */
+        }
+        .overlay-content {
+            background: rgba(10, 10, 26, 0.95);
+            border: 3px solid #ff00ff;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 0 30px #ff00ff;
+        }
+        h1 {
+            color: #00ff99;
+            text-shadow: 0 0 10px #00ff99;
+        }
+        p {
+            margin: 10px 0;
+            font-size: 1.1em;
+        }
+        button {
+            background: #ff00ff;
+            color: #0a0a1a;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px;
+            cursor: pointer;
+            font-size: 1em;
+            border-radius: 5px;
+            transition: background 0.2s, box-shadow 0.2s;
+            box-shadow: 0 0 15px #ff00ff;
+        }
+        button:hover {
+            background: #ff66ff;
+            box-shadow: 0 0 25px #ff66ff;
+        }
+        #scoreDisplay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 1.2em;
+            color: #00ff99;
+            text-shadow: 0 0 5px #00ff99;
+            z-index: 5;
+        }
+        /* D-Pad Táctil (Solo visible en pantallas pequeñas) */
+        #touchControls {
+            position: absolute;
+            bottom: 10px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            pointer-events: none; /* Permitir que los eventos pasen al canvas si no se toca */
+        }
+        .dpad-button {
+            width: 60px;
+            height: 60px;
+            background: rgba(0, 255, 153, 0.2);
+            border: 2px solid #00ff99;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5em;
+            color: #00ff99;
+            user-select: none;
+            opacity: 0.8;
+        }
+        @media (max-width: 600px) {
+            #touchControls {
+                pointer-events: auto; /* Habilitar interacción táctil */
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+    <div id="scoreDisplay">Score: 0 | High Score: 0</div>
+    <div id="overlay">
+        <div class="overlay-content">
+            <h1 id="overlayTitle">CYBER SNAKE</h1>
+            <p id="overlayMessage">Press START or Tap to Begin</p>
+            <p id="finalScore" style="display: none; font-size: 1.5em;"></p>
+            <button id="startButton">START GAME</button>
+            <button id="pauseButton" style="display: none;">PAUSE</button>
+            <button id="restartButton" style="display: none;">RESTART</button>
+        </div>
+    </div>
+    <div id="touchControls">
+        <div class="dpad-button" id="upBtn">▲</div>
+        <div class="dpad-button" id="leftBtn">◀</div>
+        <div class="dpad-button" id="rightBtn">▶</div>
+        <div class="dpad-button" id="downBtn">▼</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlayMessage = document.getElementById('overlayMessage');
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const startButton = document.getElementById('startButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const restartButton = document.getElementById('restartButton');
+
+        // --- CONFIGURACIÓN DEL JUEGO ---
+        const GRID_SIZE = 20;
+        const TILE_COUNT = 20;
+        const CANVAS_SIZE = 600; // Fijo para simplificar el layout
+        canvas.width = CANVAS_SIZE;
+        canvas.height = CANVAS_SIZE;
+
+        let gameLoopId = null;
+        let isRunning = false;
+        let isPaused = false;
+        let score = 0;
+        let highScore = localStorage.getItem('snakeHighScore') || 0;
+        let snake = [];
+        let food = {};
+        let dx = 0; // Dirección X
+        let dy = 0; // Dirección Y
+        let nextDx = 0; // Dirección temporal para evitar giros instantáneos
+        let gameSpeed = 150; // Milisegundos por tick (más bajo = más rápido)
+        let lastTime = 0;
+        let particles = [];
+
+        // --- WEB AUDIO API SETUP ---
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(frequency, duration, type = 'sine') {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration / 1000);
+
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + duration / 1000);
+        }
+
+        function playEatSound() {
+            playSound(880, 50); // High pitch beep
+        }
+
+        function playDeathSound() {
+            // Harsh, low frequency burst
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(100, audioContext.currentTime);
+            gain.gain.setValueAtTime(0.8, audioContext.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.2);
+            osc.start();
+            osc.stop(audioContext.currentTime + 0.2);
+        }
+
+        // --- FUNCIONES DE INICIALIZACIÓN Y RESET ---
+
+        function initializeGame() {
+            snake = [{ x: 10, y: 10 }];
+            dx = 1;
+            dy = 0;
+            nextDx = 1;
+            score = 0;
+            gameSpeed = 150;
+            particles = [];
+            updateScoreDisplay();
+            
+            // Asegurar que el contexto de audio esté activo
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+
+        function loadHighScore() {
+            highScore = parseInt(localStorage.getItem('snakeHighScore')) || 0;
+        }
+
+        function saveHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('snakeHighScore', highScore);
+            }
+        }
+
+        function resetGame() {
+            initializeGame();
+            overlay.style.display = 'none';
+            isRunning = true;
+            isPaused = false;
+            lastTime = performance.now();
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- LÓGICA DE JUEGO ---
+
+        function generateFood() {
+            let newFoodPos;
+            do {
+                newFoodPos = {
+                    x: Math.floor(Math.random() * TILE_COUNT),
+                    y: Math.floor(Math.random() * TILE_COUNT)
+                };
+            } while (snake.some(segment => segment.x === newFoodPos.x && segment.y === newFoodPos.y));
+            food = newFoodPos;
+        }
+
+        function checkCollision() {
+            const head = snake[0];
+
+            // 1. Wall Collision
+            if (head.x < 0 || head.x >= TILE_COUNT || head.y < 0 || head.y >= TILE_COUNT) {
+                return true;
+            }
+
+            // 2. Self Collision (Check against body segments starting from the 4th segment)
+            for (let i = 4; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        function moveSnake() {
+            // Actualizar la dirección
+            dx = nextDx;
+            dy = nextDy;
+
+            const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+
+            // 1. Colisión
+            if (checkCollision()) {
+                gameOver();
+                return;
+            }
+
+            // 2. Añadir nueva cabeza
+            snake.unshift(head);
+
+            // 3. Comprobar comida
+            if (head.x === food.x && head.y === food.y) {
+                score += 10;
+                playEatSound();
+                generateFood();
+                // No se elimina la cola, la serpiente crece
+            } else {
+                // Si no come, eliminamos la cola
+                snake.pop();
+            }
+        }
+
+        function updateParticles() {
+            particles = particles.filter(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 1;
+                if (p.life <= 0) return false;
+                return true;
+            });
+        }
+
+        function gameOver() {
+            isRunning = false;
+            cancelAnimationFrame(gameLoopId);
+            playDeathSound();
+            saveHighScore();
+
+            overlay.style.display = 'flex';
+            overlayTitle.textContent = "GAME OVER";
+            overlayMessage.textContent = `Score: ${score}`;
+            finalScoreDisplay.textContent = `High Score: ${highScore}`;
+            finalScoreDisplay.style.display = 'block';
+            startButton.style.display = 'none';
+            pauseButton.style.display = 'none';
+            restartButton.style.display = 'block';
+        }
+
+        // --- RENDERIZADO ---
+
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(0, 255, 153, 0.1)';
+            for (let i = 0; i < TILE_COUNT; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * GRID_SIZE, 0);
+                ctx.lineTo(i * GRID_SIZE, CANVAS_SIZE);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i * GRID_SIZE);
+                ctx.lineTo(CANVAS_SIZE, i * GRID_SIZE);
+                ctx.stroke();
+            }
+        }
+
+        function drawSnake() {
+            snake.forEach((segment, index) => {
+                ctx.fillStyle = index === 0 ? '#00ff99' : '#00cc77'; // Brillo para la cabeza
+                ctx.shadowColor = '#00ff99';
+                ctx.shadowBlur = index === 0 ? 15 : 5;
+
+                ctx.fillRect(segment.x * GRID_SIZE, segment.y * GRID_SIZE, GRID_SIZE - 1, GRID_SIZE - 1);
+                ctx.shadowBlur = 0; // Resetear sombra
+            });
+        }
+
+        function drawFood() {
+            ctx.fillStyle = '#ff00ff'; // Magenta neón
+            ctx.shadowColor = '#ff00ff';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(food.x * GRID_SIZE + GRID_SIZE / 2, food.y * GRID_SIZE + GRID_SIZE / 2, GRID_SIZE / 2 - 2, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.fillStyle = `rgba(255, 255, 255, ${p.life / 100})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function draw() {
+            // Fondo oscuro
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+            drawGrid();
+            drawFood();
+            drawSnake();
+            drawParticles();
+        }
+
+        function updateScoreDisplay() {
+            scoreDisplay.textContent = `Score: ${score} | High Score: ${highScore}`;
+        }
+
+        // --- BUCLE PRINCIPAL ---
+
+        function gameLoop(timestamp) {
+            if (!isRunning || isPaused) return;
+
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            // Controlar la velocidad del juego (Tick-based movement)
+            if (deltaTime > gameSpeed) {
+                moveSnake();
+                updateParticles();
+                score += 0.1; // Pequeño incremento de score por tiempo
+                updateScoreDisplay();
+                gameSpeed = Math.max(50, 150 - Math.floor(score / 10)); // Aumentar velocidad ligeramente
+            }
+
+            draw();
+
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- CONTROL DE ESTADO ---
+
+        function togglePause() {
+            if (isRunning && !isPaused) {
+                isPaused = true;
+                cancelAnimationFrame(gameLoopId);
+                overlay.style.display = 'flex';
+                overlayTitle.textContent = "PAUSED";
+                overlayMessage.textContent = "Game Paused. Click to Resume.";
+                startButton.style.display = 'none';
+                pauseButton.style.display = 'block';
+            } else if (isPaused) {
+                isRunning = true;
+                isPaused = false;
+                lastTime = performance.now();
+                gameLoopId = requestAnimationFrame(gameLoop);
+                overlay.style.display = 'none';
+            }
+        }
+
+        // --- MANEJO DE INPUTS ---
+
+        function changeDirection(newDx, newDy) {
+            // Prevenir giros opuestos inmediatos (ej: ir de derecha a izquierda en un tick)
+            if ((newDx !== -dx || newDy !== -dy)) {
+                nextDx = newDx;
+                nextDy = newDy;
+            }
+        }
+
+        // Keyboard Input
+        document.addEventListener('keydown', (e) => {
+            if (!isRunning || isPaused) return;
+
+            switch (e.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    changeDirection(0, -1);
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    changeDirection(0, 1);
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    changeDirection(-1, 0);
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    changeDirection(1, 0);
+                    break;
+                case ' ': // Spacebar para Pausar/Continuar
+                    togglePause();
+                    break;
+            }
+        });
+
+        // Touch/Mobile Input (D-Pad)
+        const touchControls = {
+            'upBtn': { dx: 0, dy: -1 },
+            'downBtn': { dx: 0, dy: 1 },
+            'leftBtn': { dx: -1, dy: 0 },
+            'rightBtn': { dx: 1, dy: 0 }
+        };
+
+        function handleTouchStart(e, buttonId) {
+            if (!isRunning || isPaused) return;
+            e.preventDefault();
+            const control = touchControls[buttonId];
+            if (control) {
+                changeDirection(control.dx, control.dy);
+            }
+        }
+
+        function handleTouchEnd(e, buttonId) {
+            // En este diseño simple, el control se mantiene activo hasta que se presiona otro
+        }
+
+        document.getElementById('upBtn').addEventListener('touchstart', (e) => handleTouchStart(e, 'upBtn'), { passive: false });
+        document.getElementById('downBtn').addEventListener('touchstart', (e) => handleTouchStart(e, 'downBtn'), { passive: false });
+        document.getElementById('leftBtn').addEventListener('touchstart', (e) => handleTouchStart(e, 'leftBtn'), { passive: false });
+        document.getElementById('rightBtn').addEventListener('touchstart', (e) => handleTouchStart(e, 'rightBtn'), { passive: false });
+
+
+        // --- MANEJO DE EVENTOS DE UI ---
+
+        startButton.addEventListener('click', resetGame);
+        pauseButton.addEventListener('click', togglePause);
+        restartButton.addEventListener('click', resetGame);
+
+        // Inicialización al cargar
+        loadHighScore();
+        initializeGame();
+        draw(); // Dibujar estado inicial (pantalla de inicio)
+
+    </script>
+</body>
+</html>

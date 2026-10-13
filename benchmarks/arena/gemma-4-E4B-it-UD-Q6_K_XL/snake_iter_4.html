@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>CyberSnake Arcade</title>
+    <style>
+        body {
+            background-color: #0a0a1a;
+            color: #00ffff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+            border: 2px solid #00ffff;
+            background-color: #111122;
+        }
+        canvas {
+            border: 2px solid #00ffff;
+            background-color: #000000;
+            box-shadow: 0 0 15px #00ffff;
+        }
+        #ui {
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+        #controls {
+            display: none; /* Hidden by default, shown on small screens */
+            margin-top: 20px;
+            width: 200px;
+        }
+        .dpad-row {
+            display: flex;
+            justify-content: center;
+        }
+        .dpad-button {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(0, 255, 255, 0.1);
+            border: 2px solid #00ffff;
+            color: #00ffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            cursor: pointer;
+            transition: background-color 0.1s;
+            margin: 2px;
+            border-radius: 10px;
+        }
+        .dpad-button:active {
+            background-color: rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 10px #00ffff;
+        }
+        @media (max-width: 600px) {
+            #controls {
+                display: block;
+            }
+            #ui {
+                font-size: 1em;
+            }
+        }
+        #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            text-align: center;
+            padding: 20px;
+        }
+        .game-button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 1.2em;
+            cursor: pointer;
+            background-color: #00ffff;
+            color: #0a0a1a;
+            border: none;
+            box-shadow: 0 0 10px #00ffff;
+            transition: background-color 0.2s;
+        }
+        .game-button:hover {
+            background-color: #00e6e6;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="gameOverScreen">
+        <h1>SYSTEM FAILURE</h1>
+        <p>SCORE: <span id="finalScore">0</span></p>
+        <p>HIGH SCORE: <span id="finalHighScore">0</span></p>
+        <button class="game-button" onclick="Game.resetGame()">RESTART</button>
+        <button class="game-button" onclick="Game.togglePause()">PAUSE</button>
+    </div>
+
+    <div id="gameContainer">
+        <div id="ui">
+            <div>SCORE: <span id="scoreDisplay">0</span></div>
+            <div id="highScoreDisplay">HIGH SCORE: 0</div>
+        </div>
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+        <!-- D-Pad Controls for Mobile -->
+        <div id="controls">
+            <div class="dpad-row">
+                <div class="dpad-button" data-direction="up">▲</div>
+            </div>
+            <div class="dpad-row">
+                <div class="dpad-button" data-direction="left">◀</div>
+                <div class="dpad-button" data-direction="down">▼</div>
+                <div class="dpad-button" data-direction="right">▶</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // =================================================================
+        // CONFIGURATION & CONSTANTS
+        // =================================================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const GRID_SIZE = 20;
+        const CANVAS_SIZE = 400;
+        const INITIAL_SPEED = 10; // Ticks per second
+        const MAX_SPEED = 20;
+
+        // =================================================================
+        // GAME STATE
+        // =================================================================
+        const GameState = {
+            snake: [{ x: 10, y: 10 }],
+            food: null,
+            direction: { x: 1, y: 0 },
+            nextDirection: { x: 1, y: 0 },
+            score: 0,
+            highScore: 0,
+            isPaused: true,
+            isGameOver: true,
+            tickInterval: INITIAL_SPEED,
+            particles: [],
+            shakeOffset: { x: 0, y: 0 },
+            shakeTimer: 0,
+            lastTime: 0
+        };
+
+        // =================================================================
+        // AUDIO ENGINE (Web Audio API)
+        // =================================================================
+        class AudioEngine {
+            constructor() {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            playTone(frequency, duration, type = 'square') {
+                if (this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+
+                oscillator.type = type;
+                oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+
+                gainNode.gain.setValueAtTime(0.5, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration / 1000);
+
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext.destination);
+
+                oscillator.start();
+                oscillator.stop(this.audioContext.currentTime + duration / 1000);
+            }
+
+            playEatSound() {
+                this.playTone(880, 100, 'square');
+            }
+
+            playDeathSound() {
+                this.playTone(50, 300, 'sawtooth');
+            }
+        }
+        const audio = new AudioEngine();
+
+        // =================================================================
+        // UI & UTILITIES
+        // =================================================================
+        const UI_SCORE = document.getElementById('scoreDisplay');
+        const UI_HIGH_SCORE = document.getElementById('highScoreDisplay');
+        const GO_SCREEN = document.getElementById('gameOverScreen');
+        const FINAL_SCORE_DISPLAY = document.getElementById('finalScore');
+        const FINAL_HIGH_SCORE_DISPLAY = document.getElementById('finalHighScore');
+
+        function loadHighScore() {
+            const storedScore = localStorage.getItem('snakeHighScore');
+            GameState.highScore = storedScore ? parseInt(storedScore) : 0;
+            UI_HIGH_SCORE.textContent = `HIGH SCORE: ${GameState.highScore}`;
+        }
+
+        function saveHighScore() {
+            if (GameState.score > GameState.highScore) {
+                GameState.highScore = GameState.score;
+                localStorage.setItem('snakeHighScore', GameState.highScore);
+                UI_HIGH_SCORE.textContent = `HIGH SCORE: ${GameState.highScore}`;
+            }
+        }
+
+        function generateFood() {
+            let newFood;
+            do {
+                newFood = {
+                    x: Math.floor(Math.random() * (CANVAS_SIZE / GRID_SIZE)),
+                    y: Math.floor(Math.random() * (CANVAS_SIZE / GRID_SIZE))
+                };
+            } while (GameState.snake.some(segment => segment.x === newFood.x && segment.y === newFood.y));
+            GameState.food = newFood;
+        }
+
+        function spawnParticles(x, y) {
+            const count = 15;
+            for (let i = 0; i < count; i++) {
+                GameState.particles.push({
+                    x: x * GRID_SIZE + GRID_SIZE / 2,
+                    y: y * GRID_SIZE + GRID_SIZE / 2,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 100,
+                    size: Math.random() * 2 + 1
+                });
+            }
+        }
+
+        // =================================================================
+        // GAME LOGIC
+        // =================================================================
+
+        function updateGame(deltaTime) {
+            if (GameState.isPaused || GameState.isGameOver) return;
+
+            GameState.direction = GameState.nextDirection;
+
+            const head = { x: GameState.snake[0].x + GameState.direction.x, y: GameState.snake[0].y + GameState.direction.y };
+
+            // 1. Check for collision (Wall or Self)
+            const hitWall = head.x < 0 || head.x >= CANVAS_SIZE / GRID_SIZE || head.y < 0 || head.y >= CANVAS_SIZE / GRID_SIZE;
+            const hitSelf = GameState.snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y);
+
+            if (hitWall || hitSelf) {
+                gameOver();
+                return;
+            }
+
+            // 2. Move snake
+            const newHead = { x: head.x, y: head.y };
+            GameState.snake.unshift(newHead);
+
+            // 3. Check for food
+            if (newHead.x === GameState.food.x && newHead.y === GameState.food.y) {
+                GameState.score += 10;
+                audio.playEatSound();
+                spawnParticles(GameState.food.x, GameState.food.y);
+                
+                // Increase speed (cap at MAX_SPEED)
+                GameState.tickInterval = Math.max(5, INITIAL_SPEED - Math.floor(GameState.score / 50) * 0.5);
+
+                // Generate new food
+                generateFood();
+            } else {
+                // If no food, remove the tail segment
+                GameState.snake.pop();
+            }
+
+            // 4. Update UI
+            UI_SCORE.textContent = GameState.score;
+        }
+
+        function drawGame() {
+            // Apply screen shake offset
+            const shakeX = GameState.shakeOffset.x;
+            const shakeY = GameState.shakeOffset.y;
+
+            // Clear canvas with grid pattern
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+            // Draw grid lines (Cyberpunk aesthetic)
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.05)';
+            for (let i = 0; i < CANVAS_SIZE / GRID_SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * GRID_SIZE, 0);
+                ctx.lineTo(i * GRID_SIZE, CANVAS_SIZE);
+                ctx.moveTo(0, i * GRID_SIZE);
+                ctx.lineTo(CANVAS_SIZE, i * GRID_SIZE);
+                ctx.stroke();
+            }
+
+            // Draw Food (Neon Apple)
+            if (GameState.food) {
+                ctx.fillStyle = '#ff00ff'; // Magenta/Neon
+                ctx.shadowColor = '#ff00ff';
+                ctx.shadowBlur = 10;
+                ctx.fillRect(GameState.food.x * GRID_SIZE, GameState.food.y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
+                ctx.shadowBlur = 0;
+            }
+
+            // Draw Snake
+            GameState.snake.forEach((segment, index) => {
+                const x = segment.x * GRID_SIZE + GRID_SIZE / 2 + shakeX;
+                const y = segment.y * GRID_SIZE + GRID_SIZE / 2 + shakeY;
+
+                if (index === 0) {
+                    // Head (Brighter Neon)
+                    ctx.fillStyle = '#00ffff';
+                    ctx.shadowColor = '#00ffff';
+                    ctx.shadowBlur = 15;
+                } else {
+                    // Body (Subtle Gradient/Glow)
+                    ctx.fillStyle = '#00ccff';
+                    ctx.shadowColor = '#00ccff';
+                    ctx.shadowBlur = 8;
+                }
+                ctx.fillRect(segment.x * GRID_SIZE, segment.y * GRID_SIZE, GRID_SIZE - 1, GRID_SIZE - 1);
+            });
+            ctx.shadowBlur = 0; // Reset shadow
+
+            // Draw Particles
+            GameState.particles.forEach(p => {
+                ctx.fillStyle = `rgba(255, 255, 255, ${p.life / 100})`;
+                ctx.beginPath();
+                ctx.arc(p.x + shakeX, p.y + shakeY, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function gameLoop(timestamp) {
+            if (GameState.isGameOver) return;
+
+            const deltaTime = timestamp - GameState.lastTime;
+            GameState.lastTime = timestamp;
+
+            // Handle game ticks based on interval
+            if (deltaTime > (1000 / GameState.tickInterval)) {
+                updateGame(deltaTime);
+                // Reset shake timer if active
+                if (GameState.shakeTimer > 0) {
+                    GameState.shakeTimer--;
+                }
+            }
+
+            // Update particles
+            GameState.particles = GameState.particles.filter(p => p.life > 0);
+            GameState.particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 1;
+                p.vx *= 0.98; // Drag
+                p.vy *= 0.98;
+            });
+
+            drawGame();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function gameOver() {
+            GameState.isGameOver = true;
+            GameState.isPaused = true;
+            saveHighScore();
+            
+            // Screen Shake Effect
+            GameState.shakeOffset = { x: 10, y: 10 };
+            GameState.shakeTimer = 15;
+
+            audio.playDeathSound();
+
+            // Display Game Over Screen
+            FINAL_SCORE_DISPLAY.textContent = GameState.score;
+            FINAL_HIGH_SCORE_DISPLAY.textContent = GameState.highScore;
+            GO_SCREEN.style.display = 'flex';
+        }
+
+        // =================================================================
+        // CONTROLS & INPUT HANDLERS
+        // =================================================================
+
+        function setDirection(newDir) {
+            const currentDir = GameState.direction;
+            // Prevent immediate reversal
+            if (newDir.x !== -currentDir.x || newDir.y !== -currentDir.y) {
+                GameState.nextDirection = newDir;
+            }
+        }
+
+        // Keyboard Controls
+        document.addEventListener('keydown', (e) => {
+            if (GameState.isGameOver) return;
+
+            let newDir = null;
+            switch (e.key) {
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                    newDir = { x: 0, y: -1 };
+                    break;
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    newDir = { x: 0, y: 1 };
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    newDir = { x: -1, y: 0 };
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    newDir = { x: 1, y: 0 };
+                    break;
+                case ' ': // Spacebar for pause/unpause
+                    if (!GameState.isGameOver) {
+                        togglePause();
+                    }
+                    return;
+            }
+            if (newDir) setDirection(newDir);
+        });
+
+        // Touch Controls (D-Pad)
+        document.querySelectorAll('.dpad-button').forEach(button => {
+            const directionMap = {
+                'up': { x: 0, y: -1 },
+                'down': { x: 0, y: 1 },
+                'left': { x: -1, y: 0 },
+                'right': { x: 1, y: 0 }
+            };
+
+            const handleTouchStart = (e) => {
+                e.preventDefault();
+                const directionKey = button.getAttribute('data-direction');
+                if (directionKey) {
+                    setDirection(directionMap[directionKey]);
+                }
+            };
+
+            button.addEventListener('touchstart', handleTouchStart, { passive: false });
+        });
+
+        // Pause/Resume Logic
+        function togglePause() {
+            if (GameState.isGameOver) return;
+            GameState.isPaused = !GameState.isPaused;
+            if (GameState.isPaused) {
+                GO_SCREEN.style.display = 'flex';
+                GO_SCREEN.querySelector('h1').textContent = "PAUSED";
+                GO_SCREEN.querySelector('p').innerHTML = "Press RESUME or Spacebar to continue.";
+            } else {
+                GO_SCREEN.style.display = 'none';
+                GO_SCREEN.querySelector('h1').textContent = "SYSTEM FAILURE";
+                GO_SCREEN.querySelector('p').innerHTML = `SCORE: <span id="finalScore">${GameState.score}</span>`;
+                GO_SCREEN.querySelector('p').innerHTML += `<br>HIGH SCORE: <span id="finalHighScore">${GameState.highScore}</span>`;
+            }
+        }
+
+        // Game Initialization and Reset
+        const Game = {
+            resetGame: function() {
+                // Reset State
+                GameState.snake = [{ x: 10, y: 10 }];
+                GameState.direction = { x: 1, y: 0 };
+                GameState.nextDirection = { x: 1, y: 0 };
+                GameState.food = null;
+                GameState.score = 0;
+                GameState.isGameOver = false;
+                GameState.isPaused = true;
+                GameState.tickInterval = INITIAL_SPEED;
+                GameState.particles = [];
+                GameState.shakeOffset = { x: 0, y: 0 };
+                GameState.shakeTimer = 0;
+
+                // UI Update
+                UI_SCORE.textContent = 0;
+                GO_SCREEN.style.display = 'none';
+
+                // Setup
+                generateFood();
+                loadHighScore();
+                
+                // Start the loop
+                GameState.lastTime = performance.now();
+                requestAnimationFrame(gameLoop);
+            },
+            togglePause: togglePause
+        };
+
+        // Initial Setup
+        window.onload = () => {
+            loadHighScore();
+            // Start the game in a paused state, waiting for user input
+            Game.resetGame();
+            GameState.isPaused = true;
+            GO_SCREEN.style.display = 'flex';
+            GO_SCREEN.querySelector('h1').textContent = "CYBERSNAKE ARCADE";
+            GO_SCREEN.querySelector('p').innerHTML = "Press RESTART or Spacebar to begin.";
+        };
+
+    </script>
+</body>
+</html>

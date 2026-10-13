@@ -639,6 +639,13 @@ const Game = (() => {
 })();
 
 // --- EVENT LISTENERS UI ---
+const btns = {
+    start: document.getElementById('btnStart'),
+    restart: document.getElementById('btnRestart'),
+    pause: document.getElementById('btnPause'),
+    resume: document.getElementById('btnResume')
+};
+
 btns.start.addEventListener('click', () => {
     Game.start();
 });

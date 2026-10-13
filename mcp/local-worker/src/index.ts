@@ -44,6 +44,8 @@ server.tool(
 	  "python -m pytest",
 	]).optional(),
     max_iterations: z.number().int().min(1).max(50).optional(),
+    max_repair_iterations: z.number().int().min(0).max(5).optional(),
+    verify_runtime: z.boolean().optional(),
     max_changed_files: z.number().int().min(1).max(20).optional(),
     keep_worktree: z.boolean().optional(),
     base_ref: z.string().min(1).max(200).optional(),

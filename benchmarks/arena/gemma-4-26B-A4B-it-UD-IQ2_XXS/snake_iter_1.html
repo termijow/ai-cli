@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEON SNAKE - CYBERPUNK ARCADE</title>
+    <style>
+        :root {
+            --neon-cyan: #00f2ff;
+            --neon-pink: #ff0055;
+            --bg-dark: #05050a;
+            --grid-color: rgba(0, 242, 255, 0.05);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            border: 2px solid var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.2);
+            background: var(--bg-dark);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI Overlays */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(5, 5, 10, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 10;
+            transition: opacity 0.3s;
+        }
+
+        .hidden {
+            display: none;
+            opacity: 0;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin: 0 0 20px 0;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 10px var(--neon-cyan);
+            letter-spacing: 5px;
+        }
+
+        .score-display {
+            position: absolute;
+            top: -40px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.2rem;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 5px var(--neon-cyan);
+        }
+
+        button {
+            background: transparent;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            padding: 10px 30px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            font-family: inherit;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px rgba(0, 242, 255, 0.2);
+        }
+
+        button:hover {
+            background: var(--neon-cyan);
+            color: var(--bg-dark);
+            box-shadow: 0 0 20px var(--neon-cyan);
+        }
+
+        /* Mobile Controls */
+        #controls {
+            margin-top: 20px;
+            display: grid;
+            grid-template-areas: 
+                ". up ."
+                "left . right"
+                ". down .";
+            gap: 10px;
+        }
+
+        .d-pad-btn {
+            width: 50px;
+            height: 50px;
+            background: rgba(0, 242, 255, 0.1);
+            border: 1px solid var(--neon-cyan);
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--neon-cyan);
+            font-size: 1.5rem;
+            touch-action: none;
+        }
+
+        .up { grid-area: up; }
+        .down { grid-area: down; }
+        .left { grid-area: left; }
+        .right { grid-area: right; }
+
+        @media (min-width: 600px) {
+            #controls { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div class="score-display">
+            <span>SCORE: <span id="current-score">0</span></span>
+            <span>HI: <span id="high-score">0</span></span>
+        </div>
+
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="overlay">
+            <h1>NEON<br>SNAKE</h1>
+            <button onclick="game.start()">INITIALIZE</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="game-over-screen" class="overlay hidden">
+            <h1 style="color: var(--neon-pink); text-shadow: 0 0 10px var(--neon-pink);">SYSTEM<br>FAILURE</h1>
+            <p id="final-score-text" style="margin-bottom: 20px;"></p>
+            <button onclick="game.start()">REBOOT</button>
+        </div>
+
+        <!-- Pause Screen -->
+        <div id="pause-screen" class="overlay hidden">
+            <h1>PAUSED</h1>
+            <button onclick="game.togglePause()">RESUME</button>
+        </div>
+    </div>
+
+    <!-- Mobile D-Pad -->
+    <div id="controls">
+        <div class="d-pad-btn up" ontouchstart="game.setDirection(0)">▲</div>
+        <div class="d-pad-btn left" ontouchstart="game.setDirection(3)">◀</div>
+        <div class="d-pad-btn right" ontouchstart="game.setDirection(1)">▶</div>
+        <div class="d-pad-btn down" ontouchstart="game.setDirection(2)">▼</div>
+    </div>
+
+    <script>
+        /**
+         * NEON SNAKE - CORE ENGINE
+         * Developed with TDD principles.
+         */
+
+        const CONFIG = {
+            gridSize: 20,
+            fps: 12,
+            colors: {
+                snake: '#00f2ff',
+                food: '#ff0055',
+                grid: 'rgba(0, 242, 255, 0.05)'
+            }
+        };
+
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            playEat() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            }
+
+            playDeath() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(40, this.ctx.currentTime + 0.5);
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.5);
+            }
+
+            playMove() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.05);
+            }
+        }
+
+        class ParticleSystem {
+            constructor() {
+                this.particles = [];
+            }
+
+            spawn(x, y, color) {
+                for (let i = 0; i < 8; i++) {
+                    this.particles.push({
+                        x: x,
+                        y: y,
+                        vx: (Math.random() - 0.5) * 4,
+                        vy: (Math.random() - 0.5) * 4,
+                        life: 1.0,
+                        color: color
+                    });
+                }
+            }
+
+            update() {
+                this.particles.forEach(p => {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.life -= 0.03;
+                });
+                this.particles = this.particles.filter(p => p.life > 0);
+            }
+
+            draw(ctx) {
+                this.particles.forEach(p => {
+                    ctx.globalAlpha = p.life;
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(p.x, p.y, 3, 3);
+                });
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        class SnakeGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.audio = new AudioEngine();
+                this.particles = new ParticleSystem();
+                
+                this.gridSize = CONFIG.gridSize;
+                this.rows = this.canvas.height / this.gridSize;
+                this.cols = this.canvas.width / this.gridSize;
+
+                this.resetState();
+                this.highScore = parseInt(localStorage.getItem('neon_snake_hi')) || 0;
+                this.updateHighScoreUI();
+
+                this.bindEvents();
+                this.loop();
+            }
+
+            resetState() {
+                this.snake = [{x: 10, y: 10}, {x: 10, y: 11}, {x: 10, y: 12}];
+                this.direction = 2; // Down
+                this.nextDirection = 2;
+                this.food = {x: 5, y: 5};
+                this.score = 0;
+                this.gameState = 'START';
+                this.lastTick = 0;
+                this.shake = 0;
+            }
+
+            bindEvents() {
+                window.addEventListener('keydown', (e) => {
+                    const key = e.key.toLowerCase();
+                    if (['arrowup', 'w'].includes(key)) this.setDirection(0);
+                    if (['arrowright', 'd'].includes(key)) this.setDirection(1);
+                    if (['arrowdown', 's'].includes(key)) this.setDirection(2);
+                    if (['arrowleft', 'a'].includes(key)) this.setDirection(3);
+                    if (key === 'escape') this.togglePause();
+                });
+            }
+
+            setDirection(dir) {
+                // Prevent 180-degree turns
+                const opposites = [2, 3, 0, 1];
+                if (dir === opposites[this.direction]) return;
+                this.nextDirection = dir;
+            }
+
+            togglePause() {
+                if (this.gameState === 'PLAYING') {
+                    this.gameState = 'PAUSED';
+                    document.getElementById('pause-screen').classList.remove('hidden');
+                } else if (this.gameState === 'PAUSED') {
+                    this.gameState = 'PLAYING';
+                    document.getElementById('pause-screen').classList.add('hidden');
+                }
+            }
+
+            start() {
+                this.audio.init();
+                this.resetState();
+                this.gameState = 'PLAYING';
+                document.getElementById('start-screen').classList.add('hidden');
+                document.getElementById('game-over-screen').classList.add('hidden');
+                document.getElementById('current-score').innerText = '0';
+            }
+
+            gameOver() {
+                this.gameState = 'GAMEOVER';
+                this.shake = 15;
+                this.audio.playDeath();
+                
+                if (this.score > this.highScore) {
+                    this.highScore = this.score;
+                    localStorage.setItem('neon_snake_hi', this.highScore);
+                    this.updateHighScoreUI();
+                }
+
+                document.getElementById('game-over-screen').classList.remove('hidden');
+                document.getElementById('final-score-text').innerText = `SCORE: ${this.score}`;
+            }
+
+            updateHighScoreUI() {
+                document.getElementById('high-score').innerText = this.highScore;
+            }
+
+            update(deltaTime) {
+                if (this.gameState !== 'PLAYING') return;
+
+                // Control tick rate via delta time
+                if (deltaTime < 1000 / CONFIG.fps) return;
+
+                this.direction = this.nextDirection;
+                
+                // Calculate new head position
+                const head = { ...this.snake[0] };
+                if (this.direction === 0) head.y -= 1;
+                if (this.direction === 1) head.x += 1;
+                if (this.direction === 2) head.y += 1;
+                if (this.direction === 3) head.x -= 1;
+
+                // Collision: Walls
+                if (head.x < 0 || head.x >= this.cols || head.y < 0 || head.y >= this.rows) {
+                    return this.gameOver();
+                }
+
+                // Collision: Self
+                for (let i = 0; i < this.snake.length; i++) {
+                    if (this.snake[i].x === head.x && this.snake[i].y === head.y) {
+                        return this.gameOver();
+                    }
+                }
+
+                this.snake.unshift(head);
+                this.audio.playMove();
+
+                // Collision: Food
+                if (head.x === this.food.x && head.y === this.food.y) {
+                    this.score += 10;
+                    document.getElementById('current-score').innerText = this.score;
+                    this.audio.playEat();
+                    this.particles.spawn(
+                        head.x * this.gridSize, 
+                        head.y * this.gridSize, 
+                        CONFIG.colors.food
+                    );
+                    
+                    // New food position
+                    this.food = {
+                        x: Math.floor(Math.random() * this.cols),
+                        y: Math.floor(Math.random() * this.rows)
+                    };
+
+                    // Prevent food spawning on snake
+                    let collision = true;
+                    while(collision) {
+                        collision = this.snake.some(s => s.x === this.food.x && s.y === this.food.y);
+                        if(collision) this.food = {
+                            x: Math.floor(Math.random() * this.cols),
+                            y: Math.floor(Math.random() * this.rows)
+                        };
+                    }
+                } else {
+                    this.snake.pop();
+                }
+
+                this.particles.update();
+                if (this.shake > 0) this.shake *= 0.9;
+            }
+
+            draw() {
+                const ctx = this.ctx;
+                
+                // Clear
+                ctx.fillStyle = '#05050a';
+                ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // Screen Shake Effect
+                ctx.save();
+                if (this.shake > 0.5) {
+                    const sx = (Math.random() - 0.5) * this.shake;
+                    const sy = (Math.random() - 0.5) * this.shake;
+                    ctx.translate(sx, sy);
+                }
+
+                // Draw Grid
+                ctx.strokeStyle = CONFIG.colors.grid;
+                ctx.lineWidth = 1;
+                for (let i = 0; i <= this.canvas.width; i += this.gridSize) {
+                    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, this.canvas.height); ctx.stroke();
+                }
+                for (let i = 0; i <= this.canvas.height; i += this.gridSize) {
+                    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(this.canvas.width, i); ctx.stroke();
+                }
+
+                // Draw Food
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = CONFIG.colors.food;
+                ctx.fillStyle = CONFIG.colors.food;
+                ctx.beginPath();
+                ctx.arc(
+                    this.food.x * this.gridSize + this.gridSize/2, 
+                    this.food.y * this.gridSize + this.gridSize/2, 
+                    this.gridSize/2 - 2, 0, Math.PI * 2
+                );
+                ctx.fill();
+
+                // Draw Snake
+                this.snake.forEach((part, index) => {
+                    const isHead = index === 0;
+                    ctx.shadowBlur = isHead ? 15 : 5;
+                    ctx.shadowColor = CONFIG.colors.snake;
+                    
+                    // Gradient for snake body
+                    const grad = ctx.createLinearGradient(
+                        part.x * this.gridSize, part.y * this.gridSize,
+                        (part.x + 1) * this.gridSize, (part.y + 1) * this.gridSize
+                    );
+                    grad.addColorStop(0, CONFIG.colors.snake);
+                    grad.addColorStop(1, '#005566');
+                    ctx.fillStyle = grad;
+
+                    ctx.fillRect(
+                        part.x * this.gridSize + 1, 
+                        part.y * this.gridSize + 1, 
+                        this.gridSize - 2, 
+                        this.gridSize - 2
+                    );
+                });
+
+                // Draw Particles
+                this.particles.draw(ctx);
+
+                ctx.restore();
+                ctx.shadowBlur = 0;
+            }
+
+            loop(timestamp) {
+                const deltaTime = timestamp - this.lastTick;
+                this.lastTick = timestamp;
+
+                this.update(deltaTime);
+                this.draw();
+
+                requestAnimationFrame((t) => this.loop(t));
+            }
+        }
+
+        // Initialize Game
+        const game = new SnakeGame();
+
+    </script>
+</body>
+</html>
