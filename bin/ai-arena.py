@@ -20,12 +20,17 @@ try:
 except Exception:
     pass
 
-# Garantizar que Node.js y npm estén en el PATH para subprocesos
-node_dir = r"C:\Program Files\nodejs"
-npm_dir = r"C:\Users\USUARIO\AppData\Roaming\npm"
+# Garantizar que Node.js, npm y herramientas de usuario estén en el PATH
 curr_path = os.environ.get("PATH", "")
-if node_dir not in curr_path:
-    os.environ["PATH"] = f"{node_dir};{npm_dir};{curr_path}"
+if sys.platform == "win32":
+    node_dir = r"C:\Program Files\nodejs"
+    npm_dir = r"C:\Users\USUARIO\AppData\Roaming\npm"
+    if node_dir not in curr_path:
+        os.environ["PATH"] = f"{node_dir};{npm_dir};{curr_path}"
+else:
+    local_bin = str(Path.home() / ".local" / "bin")
+    if local_bin not in curr_path.split(os.pathsep):
+        os.environ["PATH"] = f"{local_bin}{os.pathsep}{curr_path}"
 
 # Configuración y Rutas
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -35,8 +40,34 @@ PRESETS_DIR = PROJECT_ROOT / "presets"
 RESULTS_DIR = PROJECT_ROOT / "benchmarks" / "arena"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-LLAMA_BIN = PROJECT_ROOT / "llama-bin" / "llama-server.exe"
-LLAMA_PRISM = PROJECT_ROOT / "llama-prism" / "llama-server.exe"
+def resolve_llama_bin(is_prism=False):
+    import shutil
+    env_llama = os.environ.get("LLAMA_PATH")
+    if env_llama and Path(env_llama).is_file():
+        return Path(env_llama)
+    bin_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
+    if is_prism:
+        for p in [
+            PROJECT_ROOT / "llama-prism" / bin_name,
+            Path.home() / "llama.cpp" / "llama-prism" / bin_name,
+        ]:
+            if p.is_file():
+                return p
+    candidates = [
+        PROJECT_ROOT / "llama-bin" / bin_name,
+        Path.home() / "llama.cpp" / "build" / "bin" / bin_name,
+        Path.home() / "llama.cpp" / bin_name,
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    found = shutil.which("llama-server") or shutil.which("llama-server.exe")
+    if found:
+        return Path(found)
+    return candidates[0]
+
+LLAMA_BIN = resolve_llama_bin(is_prism=False)
+LLAMA_PRISM = resolve_llama_bin(is_prism=True)
 
 # Reglas del Torneo Estandarizado
 STANDARD_THINKING_BUDGET = 8192
@@ -73,16 +104,24 @@ def c_bold(t): return colorize(t, "1")
 
 def find_available_models():
     found = []
-    if not MODELS_DIR.exists():
-        return found
-    for f in MODELS_DIR.rglob("*.gguf"):
-        if "mmproj" in f.name.lower() or "imatrix" in f.name.lower():
+    seen = set()
+    search_dirs = [MODELS_DIR, Path.home() / "models"]
+    for d in search_dirs:
+        if not d.exists():
             continue
-        found.append(f)
+        for f in d.rglob("*.gguf"):
+            if "mmproj" in f.name.lower() or "imatrix" in f.name.lower() or "vocab" in f.name.lower():
+                continue
+            if f.name not in seen:
+                seen.add(f.name)
+                found.append(f)
     return sorted(found, key=lambda x: x.name)
 
 def kill_server():
-    subprocess.run(["taskkill", "/F", "/IM", "llama-server.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/F", "/IM", "llama-server.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.run(["pkill", "-f", "llama-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
 
 def wait_for_server(proc=None, port=1234, timeout=75):
@@ -158,7 +197,7 @@ def start_server_for_model(model_path):
     preset = load_preset_for_model(name)
 
     is_prism = any(x in name.lower() for x in ["ternary", "bonsai", "ptq1_0", "pq2_0"])
-    exe = LLAMA_PRISM if (is_prism and LLAMA_PRISM.exists()) else LLAMA_BIN
+    exe = resolve_llama_bin(is_prism=is_prism)
 
     gpu_layers = preset.get("AI_GPU_LAYERS", "99")
     ctx_size = preset.get("AI_CTX_SIZE", "24576")
@@ -166,6 +205,17 @@ def start_server_for_model(model_path):
     cache_v = preset.get("AI_CACHE_TYPE_V", "q4_0")
     mtp = preset.get("AI_MTP", "off")
     mtp_draft = preset.get("AI_MTP_DRAFT_MAX", "2")
+
+    device_arg = []
+    try:
+        dev_res = subprocess.run([str(exe), "--list-devices"], capture_output=True, text=True, timeout=5)
+        out = (dev_res.stdout or "") + (dev_res.stderr or "")
+        if "Vulkan0" in out:
+            device_arg = ["--device", "Vulkan0"]
+        elif "CUDA0" in out:
+            device_arg = ["--device", "CUDA0"]
+    except Exception:
+        pass
 
     cmd = [
         str(exe),
@@ -178,7 +228,9 @@ def start_server_for_model(model_path):
         "--ctx-size", str(ctx_size),
         "--batch-size", "1024",
         "--ubatch-size", "256",
-        "--device", "Vulkan0",
+    ]
+    cmd.extend(device_arg)
+    cmd.extend([
         "--jinja",
         "--flash-attn", "auto",
         "--parallel", "1",
@@ -190,7 +242,7 @@ def start_server_for_model(model_path):
         "--reasoning-budget", str(STANDARD_THINKING_BUDGET),
         "--reasoning-format", "deepseek",
         "--predict", str(STANDARD_MAX_TOKENS)
-    ]
+    ])
 
     if mtp.lower() == "on" and ("mtp" in name.lower() or "qwen3.6" in name.lower()):
         cmd.extend(["--spec-type", "draft-mtp", "--spec-draft-n-max", str(mtp_draft)])
@@ -202,7 +254,7 @@ def start_server_for_model(model_path):
         cmd,
         stdout=log_f,
         stderr=subprocess.STDOUT,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     )
 
     ok, msg = wait_for_server(proc=proc, port=1234, timeout=75)
@@ -781,13 +833,25 @@ def run_pi_agent_benchmark(model_path):
     t0 = time.time()
     env = os.environ.copy()
     env["LLAMA_BASE_URL"] = "http://127.0.0.1:1234"
-    env["PATH"] = r"C:\Program Files\nodejs;C:\Users\USUARIO\AppData\Roaming\npm;" + env.get("PATH", "")
+    if sys.platform == "win32":
+        env["PATH"] = r"C:\Program Files\nodejs;C:\Users\USUARIO\AppData\Roaming\npm;" + env.get("PATH", "")
+    else:
+        local_bin = str(Path.home() / ".local" / "bin")
+        curr_p = env.get("PATH", "")
+        if local_bin not in curr_p.split(os.pathsep):
+            env["PATH"] = f"{local_bin}{os.pathsep}{curr_p}"
 
-    pi_cmd = ["pi", "-p", pi_prompt, "--thinking", "high", "--approve"]
+    import shutil
+    if sys.platform == "win32":
+        pi_executable = shutil.which("pi.cmd", path=env.get("PATH")) or shutil.which("pi", path=env.get("PATH")) or "pi"
+    else:
+        pi_executable = shutil.which("pi", path=env.get("PATH")) or str(Path.home() / ".local" / "bin" / "pi")
+
+    pi_cmd = [pi_executable, "-p", pi_prompt, "--thinking", "high", "--approve"]
 
     print(c_green("\n✦ Lanzando agente Pi en la terminal...\n"))
     try:
-        subprocess.run(pi_cmd, cwd=str(model_safe_dir), env=env)
+        subprocess.run(pi_cmd, cwd=str(model_safe_dir), env=env, shell=(sys.platform == "win32"))
     except Exception as e:
         print(c_red(f"Error ejecutando Pi: {e}"))
     finally:

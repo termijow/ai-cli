@@ -116,6 +116,9 @@ echo -e "\n✦ Configurando entorno y enlaces simbólicos..."
 mkdir -p "$BIN_DEST"
 for bin_file in "$PROJECT_ROOT"/bin/*; do
     if [ -f "$bin_file" ]; then
+        case "$bin_file" in
+            *.cmd|*.bat|*.ps1|*.html) continue ;;
+        esac
         chmod +x "$bin_file"
         ln -sf "$bin_file" "$BIN_DEST/$(basename "$bin_file")"
     fi

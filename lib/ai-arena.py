@@ -20,12 +20,17 @@ try:
 except Exception:
     pass
 
-# Garantizar que Node.js y npm estén en el PATH para subprocesos
-node_dir = r"C:\Program Files\nodejs"
-npm_dir = r"C:\Users\USUARIO\AppData\Roaming\npm"
+# Garantizar que Node.js, npm y herramientas de usuario estén en el PATH
 curr_path = os.environ.get("PATH", "")
-if node_dir not in curr_path:
-    os.environ["PATH"] = f"{node_dir};{npm_dir};{curr_path}"
+if sys.platform == "win32":
+    node_dir = r"C:\Program Files\nodejs"
+    npm_dir = r"C:\Users\USUARIO\AppData\Roaming\npm"
+    if node_dir not in curr_path:
+        os.environ["PATH"] = f"{node_dir};{npm_dir};{curr_path}"
+else:
+    local_bin = str(Path.home() / ".local" / "bin")
+    if local_bin not in curr_path.split(os.pathsep):
+        os.environ["PATH"] = f"{local_bin}{os.pathsep}{curr_path}"
 
 # Configuración y Rutas
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -35,8 +40,34 @@ PRESETS_DIR = PROJECT_ROOT / "presets"
 RESULTS_DIR = PROJECT_ROOT / "benchmarks" / "arena"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-LLAMA_BIN = PROJECT_ROOT / "llama-bin" / "llama-server.exe"
-LLAMA_PRISM = PROJECT_ROOT / "llama-prism" / "llama-server.exe"
+def resolve_llama_bin(is_prism=False):
+    import shutil
+    env_llama = os.environ.get("LLAMA_PATH")
+    if env_llama and Path(env_llama).is_file():
+        return Path(env_llama)
+    bin_name = "llama-server.exe" if sys.platform == "win32" else "llama-server"
+    if is_prism:
+        for p in [
+            PROJECT_ROOT / "llama-prism" / bin_name,
+            Path.home() / "llama.cpp" / "llama-prism" / bin_name,
+        ]:
+            if p.is_file():
+                return p
+    candidates = [
+        PROJECT_ROOT / "llama-bin" / bin_name,
+        Path.home() / "llama.cpp" / "build" / "bin" / bin_name,
+        Path.home() / "llama.cpp" / bin_name,
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    found = shutil.which("llama-server") or shutil.which("llama-server.exe")
+    if found:
+        return Path(found)
+    return candidates[0]
+
+LLAMA_BIN = resolve_llama_bin(is_prism=False)
+LLAMA_PRISM = resolve_llama_bin(is_prism=True)
 
 # Reglas del Torneo Estandarizado
 STANDARD_THINKING_BUDGET = 8192
@@ -73,16 +104,24 @@ def c_bold(t): return colorize(t, "1")
 
 def find_available_models():
     found = []
-    if not MODELS_DIR.exists():
-        return found
-    for f in MODELS_DIR.rglob("*.gguf"):
-        if "mmproj" in f.name.lower() or "imatrix" in f.name.lower():
+    seen = set()
+    search_dirs = [MODELS_DIR, Path.home() / "models"]
+    for d in search_dirs:
+        if not d.exists():
             continue
-        found.append(f)
+        for f in d.rglob("*.gguf"):
+            if "mmproj" in f.name.lower() or "imatrix" in f.name.lower() or "vocab" in f.name.lower():
+                continue
+            if f.name not in seen:
+                seen.add(f.name)
+                found.append(f)
     return sorted(found, key=lambda x: x.name)
 
 def kill_server():
-    subprocess.run(["taskkill", "/F", "/IM", "llama-server.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/F", "/IM", "llama-server.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.run(["pkill", "-f", "llama-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
 
 def wait_for_server(proc=None, port=1234, timeout=75):
@@ -158,7 +197,7 @@ def start_server_for_model(model_path):
     preset = load_preset_for_model(name)
 
     is_prism = any(x in name.lower() for x in ["ternary", "bonsai", "ptq1_0", "pq2_0"])
-    exe = LLAMA_PRISM if (is_prism and LLAMA_PRISM.exists()) else LLAMA_BIN
+    exe = resolve_llama_bin(is_prism=is_prism)
 
     gpu_layers = preset.get("AI_GPU_LAYERS", "99")
     ctx_size = preset.get("AI_CTX_SIZE", "24576")
@@ -166,6 +205,17 @@ def start_server_for_model(model_path):
     cache_v = preset.get("AI_CACHE_TYPE_V", "q4_0")
     mtp = preset.get("AI_MTP", "off")
     mtp_draft = preset.get("AI_MTP_DRAFT_MAX", "2")
+
+    device_arg = []
+    try:
+        dev_res = subprocess.run([str(exe), "--list-devices"], capture_output=True, text=True, timeout=5)
+        out = (dev_res.stdout or "") + (dev_res.stderr or "")
+        if "Vulkan0" in out:
+            device_arg = ["--device", "Vulkan0"]
+        elif "CUDA0" in out:
+            device_arg = ["--device", "CUDA0"]
+    except Exception:
+        pass
 
     cmd = [
         str(exe),
@@ -178,7 +228,9 @@ def start_server_for_model(model_path):
         "--ctx-size", str(ctx_size),
         "--batch-size", "1024",
         "--ubatch-size", "256",
-        "--device", "Vulkan0",
+    ]
+    cmd.extend(device_arg)
+    cmd.extend([
         "--jinja",
         "--flash-attn", "auto",
         "--parallel", "1",
@@ -190,7 +242,7 @@ def start_server_for_model(model_path):
         "--reasoning-budget", str(STANDARD_THINKING_BUDGET),
         "--reasoning-format", "deepseek",
         "--predict", str(STANDARD_MAX_TOKENS)
-    ]
+    ])
 
     if mtp.lower() == "on" and ("mtp" in name.lower() or "qwen3.6" in name.lower()):
         cmd.extend(["--spec-type", "draft-mtp", "--spec-draft-n-max", str(mtp_draft)])
@@ -202,7 +254,7 @@ def start_server_for_model(model_path):
         cmd,
         stdout=log_f,
         stderr=subprocess.STDOUT,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     )
 
     ok, msg = wait_for_server(proc=proc, port=1234, timeout=75)
@@ -392,32 +444,52 @@ def evaluate_code_deep(code_str):
     else:
         failed.append("Falta elemento <canvas> o llamada a getContext('2d').")
 
-    # 4. Game Loop fluido (10 pts)
-    if "requestAnimationFrame" in code_str or "setInterval" in code_str:
-        score += 10
-        passed.append("Bucle de juego (Game Loop) implementado (+10)")
+    # 4. Game Loop fluido y detección de bucle congelado (10 pts)
+    has_raf = "requestAnimationFrame" in code_str
+    has_interval = "setInterval" in code_str
+    if has_raf or has_interval:
+        # Detectar patrón de bucle congelado: comparar delta sin acumulador
+        has_accumulator = any(k in code_str for k in ["accumulator", "tickAccumulator", "+= delta", "+= dt", "+= (dt", "+= deltaTime", "acc +=", "Math.floor(delta /"])
+        checks_dt = any(k in code_str for k in ["dt >", "dt <", "dt >=", "dt <=", "delta >", "delta <", "delta >=", "delta <=", "deltaTime >", "deltaTime <", "deltaTime >=", "deltaTime <="])
+        if has_raf and not has_interval and checks_dt and not has_accumulator:
+            score += 3
+            passed.append("Estructura de Game Loop con requestAnimationFrame (+3)")
+            failed.append("BUG CRÍTICO DE BUCLE CONGELADO: Estás comparando delta time sin acumularlo entre frames (ej: 'lastTime = timestamp' en cada frame). En 60Hz delta es ~16ms, por lo que nunca alcanza el umbral de tick y la serpiente queda inmóvil. Solución: usa un acumulador de tiempo (accumulator += deltaTime; if (accumulator >= tickMs) { update(); accumulator = 0; }).")
+        else:
+            score += 10
+            passed.append("Bucle de juego (Game Loop) continuo y funcional (+10)")
     else:
         failed.append("Falta bucle de juego continuo (requestAnimationFrame o setInterval).")
 
-    # 5. Web Audio API sintetizada (15 pts)
+    # 5. Web Audio API sintetizada y desbloqueada (15 pts)
     has_audio_ctx = "AudioContext" in code_str or "webkitAudioContext" in code_str
     has_oscillator = "createOscillator" in code_str or "OscillatorNode" in code_str
-    if has_audio_ctx and has_oscillator:
+    has_resume = ".resume()" in code_str
+    if has_audio_ctx and has_oscillator and has_resume:
         score += 15
-        passed.append("Efectos de sonido sintetizados con Web Audio API (Osciladores procedimentales) (+15)")
+        passed.append("Web Audio API completa con sintetizador procedimental y .resume() en interacción (+15)")
+    elif has_audio_ctx and has_oscillator:
+        score += 10
+        passed.append("AudioContext y osciladores presentes (+10)")
+        failed.append("Audio bloqueado por política de autoplay: llama a audioCtx.resume() dentro del listener de click o inicio del juego para que suene en navegadores modernos.")
     elif has_audio_ctx:
-        score += 8
-        passed.append("AudioContext inicializado pero faltan osciladores (+8)")
+        score += 6
+        passed.append("AudioContext inicializado pero faltan osciladores (+6)")
         failed.append("Web Audio API incompleta: usa createOscillator() y createGain() para sintetizar sonidos al comer y morir.")
     else:
         failed.append("Falta Web Audio API: el juego debe sintetizar sonidos procedimentales sin archivos externos.")
 
-    # 6. Controles: Teclado + Touch D-Pad (15 pts)
+    # 6. Controles: Teclado + Touch D-Pad + Protección de giro (15 pts)
     has_kbd = "keydown" in code_str or "ArrowUp" in code_str or "keyCode" in code_str or "key" in code_str
     has_touch = "touchstart" in code_str or "pointerdown" in code_str or "dpad" in code_str.lower() or "touch" in code_str.lower()
-    if has_kbd and has_touch:
+    has_flawed_math = "snake[0].x * newDir.x" in code_str or "head.x * newDir.x" in code_str
+    if has_kbd and has_touch and not has_flawed_math:
         score += 15
         passed.append("Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)")
+    elif has_kbd and has_touch and has_flawed_math:
+        score += 10
+        passed.append("Controles duales presentes pero con bug de giro (+10)")
+        failed.append("Bug matemático en giro: Estás multiplicando la posición del cuerpo por la dirección ('head.x * newDir.x'), lo que bloquea el giro cuando x=0. Compara directamente vectores (ej: if (dx !== 0 && currentDx === -dx) return).")
     elif has_kbd:
         score += 8
         passed.append("Controles de teclado implementados (+8)")
@@ -439,8 +511,42 @@ def evaluate_code_deep(code_str):
     else:
         failed.append("Faltan efectos visuales: añade sistema de partículas al comer manzana o screen shake al morir.")
 
-    if "TODO" in code_str or "// el resto" in code_str.lower() or len(code_str) < 1500:
-        failed.append("Código contiene placeholders ('TODO') o está incompleto (< 1500 bytes).")
+    # 9. Verificación de interactividad de UI (Clicks desbloqueados)
+    if "pointer-events: none" in code_str:
+        if ("#overlay" in code_str or ".overlay" in code_str) and "pointer-events: auto" not in code_str:
+            score -= 10
+            failed.append("BUG DE UI BLOQUEADA: Tu overlay tiene 'pointer-events: none' y los botones no tienen 'pointer-events: auto', impidiendo que el usuario pueda hacer click en 'Iniciar Juego'.")
+
+    # 10. Verificación de ejecución runtime en Node con Mock DOM
+    if js_code:
+        mock_dom = """
+        global.window = global;
+        global.addEventListener = () => {};
+        global.removeEventListener = () => {};
+        global.innerHeight = 800;
+        global.innerWidth = 1200;
+        const mockElem = { addEventListener: ()=>{}, style: {}, classList: { add: ()=>{}, remove: ()=>{} }, textContent: '', innerText: '', getContext: () => ({ fillRect(){}, strokeRect(){}, clearRect(){}, beginPath(){}, moveTo(){}, lineTo(){}, arc(){}, fill(){}, stroke(){}, save(){}, restore(){}, translate(){}, scale(){}, createLinearGradient: ()=>({ addColorStop(){} }) }) };
+        global.document = {
+            getElementById: () => mockElem,
+            querySelector: () => mockElem,
+            querySelectorAll: () => [mockElem],
+            addEventListener: () => {}
+        };
+        global.localStorage = { getItem: () => '0', setItem: () => {} };
+        global.AudioContext = class { constructor(){ this.currentTime=0; this.destination={}; this.state='running'; } createOscillator() { return { connect(){}, start(){}, stop(){}, frequency:{setValueAtTime(){}} }; } createGain() { return { connect(){}, gain:{setValueAtTime(){}, exponentialRampToValueAtTime(){}} }; } };
+        global.webkitAudioContext = global.AudioContext;
+        global.performance = { now: () => Date.now() };
+        global.requestAnimationFrame = () => 1;
+        """
+        try:
+            runtime_res = subprocess.run(["node", "-e", mock_dom + "\n" + js_code], capture_output=True, text=True, timeout=5)
+            if runtime_res.returncode != 0 and ("ReferenceError" in runtime_res.stderr or "TypeError" in runtime_res.stderr):
+                err_line = [l.strip() for l in runtime_res.stderr.splitlines() if "Error:" in l]
+                err_msg = err_line[0] if err_line else "Error en ejecución de JavaScript"
+                score -= 15
+                failed.append(f"BUG RUNTIME JAVASCRIPT: {err_msg}. Asegúrate de que todas las variables y elementos del DOM estén definidos en el ámbito (scope) correcto.")
+        except Exception:
+            pass
 
     score = max(0, min(score, 100))
     details = passed + [f"PENDIENTE: {f}" for f in failed]
@@ -727,13 +833,25 @@ def run_pi_agent_benchmark(model_path):
     t0 = time.time()
     env = os.environ.copy()
     env["LLAMA_BASE_URL"] = "http://127.0.0.1:1234"
-    env["PATH"] = r"C:\Program Files\nodejs;C:\Users\USUARIO\AppData\Roaming\npm;" + env.get("PATH", "")
+    if sys.platform == "win32":
+        env["PATH"] = r"C:\Program Files\nodejs;C:\Users\USUARIO\AppData\Roaming\npm;" + env.get("PATH", "")
+    else:
+        local_bin = str(Path.home() / ".local" / "bin")
+        curr_p = env.get("PATH", "")
+        if local_bin not in curr_p.split(os.pathsep):
+            env["PATH"] = f"{local_bin}{os.pathsep}{curr_p}"
 
-    pi_cmd = ["pi", "-p", pi_prompt, "--thinking", "high", "--approve"]
+    import shutil
+    if sys.platform == "win32":
+        pi_executable = shutil.which("pi.cmd", path=env.get("PATH")) or shutil.which("pi", path=env.get("PATH")) or "pi"
+    else:
+        pi_executable = shutil.which("pi", path=env.get("PATH")) or str(Path.home() / ".local" / "bin" / "pi")
+
+    pi_cmd = [pi_executable, "-p", pi_prompt, "--thinking", "high", "--approve"]
 
     print(c_green("\n✦ Lanzando agente Pi en la terminal...\n"))
     try:
-        subprocess.run(pi_cmd, cwd=str(model_safe_dir), env=env)
+        subprocess.run(pi_cmd, cwd=str(model_safe_dir), env=env, shell=(sys.platform == "win32"))
     except Exception as e:
         print(c_red(f"Error ejecutando Pi: {e}"))
     finally:
@@ -810,43 +928,62 @@ def print_and_save_leaderboard(results):
     print(c_green(f"📊 Tabla guardada en Markdown: {md_file}"))
 
 def main():
-    print(c_blue("╭──────────────────────────────────────────────────────────╮"))
-    print(c_blue("│") + c_yellow(" ⚔️  AI-CLI ARENA: TORNEO DE MODELOS & BENCHMARK HARNESS ") + c_blue("│"))
-    print(c_blue("╰──────────────────────────────────────────────────────────╯"))
+    import argparse
+    parser = argparse.ArgumentParser(description="AI Arena")
+    parser.add_argument("--model", type=str, default=None, help="Nombre o substring del modelo")
+    parser.add_argument("--mode", type=str, choices=["1", "2", "3"], default=None, help="1=Loop, 2=Pi, 3=Single")
+    parser.add_argument("--all", action="store_true", help="Correr todos los modelos")
+    args = parser.parse_args()
 
     models = find_available_models()
     if not models:
         print(c_red("❌ No se encontraron modelos en la carpeta models/"))
         sys.exit(1)
 
-    print("\n📦 Modelos disponibles en tu máquina:")
-    for idx, m in enumerate(models, 1):
-        sz = m.stat().st_size / (1024**3)
-        print(f"  {idx}) {c_bold(m.name)} ({sz:.2f} GB)")
-
-    print(f"  {c_green('A) Correr TODOS en modo Torneo Automático (Full Arena)')}")
-    print(f"  0) Salir")
-
-    opt = input("\nElige el modelo o torneo [A, 1-N, 0]: ").strip()
-    if opt == "0" or not opt:
-        sys.exit(0)
-
     selected_models = []
-    if opt.lower() == "a":
+    mode_opt = args.mode or "1"
+
+    if args.all:
         selected_models = models
-    elif opt.isdigit() and 1 <= int(opt) <= len(models):
-        selected_models = [models[int(opt) - 1]]
+    elif args.model:
+        for m in models:
+            if args.model.lower() in m.name.lower():
+                selected_models.append(m)
+        if not selected_models:
+            print(c_red(f"❌ Modelo '{args.model}' no encontrado."))
+            sys.exit(1)
     else:
-        print(c_red("Opción inválida."))
-        sys.exit(1)
+        print(c_blue("╭──────────────────────────────────────────────────────────╮"))
+        print(c_blue("│") + c_yellow(" ⚔️  AI-CLI ARENA: TORNEO DE MODELOS & BENCHMARK HARNESS ") + c_blue("│"))
+        print(c_blue("╰──────────────────────────────────────────────────────────╯"))
 
-    print(c_yellow("\nModos de Harness de Evaluación:"))
-    print(f"  1) {c_green('🔄 Loop Engineering Harness')} (Auto-testing iterativo TDD, 100k budget, auto-compaction) [RECOMENDADO]")
-    print(f"  2) {c_cyan('🥧 Pi Coding Agent Harness')} (Agente Pi con herramientas completas de archivo y shell)")
-    print(f"  3) {c_yellow('⚡ Single-Shot')} (1 pasada directa)")
+        print("\n📦 Modelos disponibles en tu máquina:")
+        for idx, m in enumerate(models, 1):
+            sz = m.stat().st_size / (1024**3)
+            print(f"  {idx}) {c_bold(m.name)} ({sz:.2f} GB)")
 
-    mode_opt = input("\nElige el modo [1/2/3, Enter=1]: ").strip()
-    if not mode_opt: mode_opt = "1"
+        print(f"  {c_green('A) Correr TODOS en modo Torneo Automático (Full Arena)')}")
+        print(f"  0) Salir")
+
+        opt = input("\nElige el modelo o torneo [A, 1-N, 0]: ").strip()
+        if opt == "0" or not opt:
+            sys.exit(0)
+
+        if opt.lower() == "a":
+            selected_models = models
+        elif opt.isdigit() and 1 <= int(opt) <= len(models):
+            selected_models = [models[int(opt) - 1]]
+        else:
+            print(c_red("Opción inválida."))
+            sys.exit(1)
+
+        print(c_yellow("\nModos de Harness de Evaluación:"))
+        print(f"  1) {c_green('🔄 Loop Engineering Harness')} (Auto-testing iterativo TDD, 100k budget, auto-compaction) [RECOMENDADO]")
+        print(f"  2) {c_cyan('🥧 Pi Coding Agent Harness')} (Agente Pi con herramientas completas de archivo y shell)")
+        print(f"  3) {c_yellow('⚡ Single-Shot')} (1 pasada directa)")
+
+        mode_opt = input("\nElige el modo [1/2/3, Enter=1]: ").strip()
+        if not mode_opt: mode_opt = "1"
 
     results = []
     for m in selected_models:

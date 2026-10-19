@@ -1,7 +1,13 @@
 #!/bin/bash
 
-# Detectar ubicación del script de forma portable
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+# Detectar ubicación del script de forma portable (resolviendo symlinks)
+_SOURCE="${BASH_SOURCE[0]:-$0}"
+while [[ -L "$_SOURCE" ]]; do
+    _DIR="$(cd -P "$(dirname "$_SOURCE")" >/dev/null 2>&1 && pwd -P)"
+    _SOURCE="$(readlink "$_SOURCE")"
+    [[ "$_SOURCE" != /* ]] && _SOURCE="$_DIR/$_SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$_SOURCE")" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
 # Localizar .env
@@ -282,7 +288,7 @@ case "$1" in
         if [[ -f "$PROJECT_ROOT/bin/ai-claude" ]]; then
             exec "$PROJECT_ROOT/bin/ai-claude" "$@"
         else
-            exec claude --local "$@"
+            exec claude "$@"
         fi
         ;;
     qwen)
@@ -291,6 +297,16 @@ case "$1" in
             exec "$PROJECT_ROOT/bin/ai-qwen" "$@"
         else
             exec qwen "$@"
+        fi
+        ;;
+    pi)
+        shift
+        if [[ -f "$PROJECT_ROOT/bin/ai-pi" ]]; then
+            exec "$PROJECT_ROOT/bin/ai-pi" "$@"
+        else
+            export LLAMA_BASE_URL="http://127.0.0.1:${PORT:-1234}"
+            export PATH="$HOME/.local/bin:$PATH"
+            exec pi "$@"
         fi
         ;;
     whatsapp|wa)

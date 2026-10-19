@@ -39,6 +39,8 @@ topic_commands() {
     echo -e "  ${GREEN}ai savings${NC}               Muestra el total ahorrado en USD frente a APIs pagas."
     echo -e "  ${GREEN}ai stats${NC}                 Estadísticas de tokens y ahorro en BD SQLite."
     echo -e "  ${GREEN}ai install-model <URL>${NC}   Descarga un archivo .gguf y lo configura en ~/models."
+    echo -e "  ${GREEN}ai pi [prompt]${NC}          Lanza el agente autónomo Pi con el LLM local."
+    echo -e "  ${GREEN}ai arena${NC}                Torneo de benchmarks y evaluación entre modelos."
     echo -e "  ${GREEN}ai status${NC}                Verifica si el servidor está corriendo y uso de GPU."
     echo -e "  ${GREEN}ai stop / ai restart${NC}     Detiene o reinicia el servidor llama-server."
     echo ""

@@ -3,7 +3,13 @@
 # AI-CLAUDE: Lanza Claude Code apuntando al servidor local (ai-serve)
 # ==============================================================================
 
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+_SOURCE="${BASH_SOURCE[0]:-$0}"
+while [[ -L "$_SOURCE" ]]; do
+    _DIR="$(cd -P "$(dirname "$_SOURCE")" >/dev/null 2>&1 && pwd -P)"
+    _SOURCE="$(readlink "$_SOURCE")"
+    [[ "$_SOURCE" != /* ]] && _SOURCE="$_DIR/$_SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$_SOURCE")" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 
 # Cargar .env del proyecto
@@ -12,6 +18,20 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
 fi
 
 PORT=${PORT:-1234}
+
+# Asegurar que ~/.local/bin esté en el PATH
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
+
+# Omitir chequeo del servidor para flags informativos
+case "$1" in
+    --help|-h|--version|-v)
+        exec "$CLAUDE_BIN" "$@"
+        ;;
+esac
 
 export ANTHROPIC_BASE_URL="http://127.0.0.1:${PORT}"
 export ANTHROPIC_AUTH_TOKEN="local"
@@ -23,12 +43,12 @@ unset DISABLE_AUTO_COMPACT
 unset CLAUDE_CODE_AUTO_COMPACT_WINDOW
 
 # Verificar que el servidor esté corriendo
-if ! curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
-    echo "⚠️  El servidor local no está corriendo en localhost:${PORT}"
-    echo "   Ejecuta 'ai-serve' primero en otra terminal."
+if ! curl -sf "http://127.0.0.1:${PORT}/health" > /dev/null 2>&1; then
+    echo "⚠️  El servidor local no está corriendo en http://127.0.0.1:${PORT}"
+    echo "   Tip: Ejecuta 'ai serve' o 'ai-serve' primero en otra terminal."
     echo ""
     read -rp "¿Continuar de todas formas? (s/n): " ans
     [[ "$ans" != "s" && "$ans" != "S" ]] && exit 1
 fi
 
-exec claude --local "$@"
+exec "$CLAUDE_BIN" "$@"
