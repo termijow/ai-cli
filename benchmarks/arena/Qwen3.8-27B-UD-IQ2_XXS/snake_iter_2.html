@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>SNAKE // NEON</title>
+<style>
+  :root {
+    --bg0:#05060f; --bg1:#0a1030; --bg2:#1a0033;
+    --cyan:#00f6ff; --magenta:#ff00e0; --text:#d6f6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0;
+    background:
+      radial-gradient(1200px at 50% 0%, #0a1030 0%, #05060f 60%),
+      radial-gradient(800px at 50% 100%, #1a0033 0%, transparent 60%);
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+  #app { width:100%; max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:12px; padding:12px; }
+  header { display:flex; flex-direction:column; gap:8px; }
+  h1 { font-size:28px; letter-spacing:4px; color:var(--cyan); text-shadow:0 0 12px var(--cyan),0 0 30px var(--magenta); margin:0; text-align:center; }
+  .hud { display:flex; gap:16px; justify-content:center; }
+  .hud .pill { border:1px solid rgba(0,246,255,.4); padding:6px 14px; border-radius:6px; background:rgba(0,246,255,.08); box-shadow:0 0 12px rgba(0,246,255,.25) inset; font-size:14px; }
+  #stage { position:relative; width:100%; aspect-ratio:1; }
+  canvas { width:100%; height:100%; display:block; border:1px solid rgba(0,246,255,.35); box-shadow:0 0 24px rgba(0,246,255,.25),0 0 60px rgba(255,0,224,.15); background:#05060f; }
+  #overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; background:rgba(5,6,15,.55); backdrop-filter:blur(2px); }
+  #overlay.hidden { display:none; }
+  #overlay h2 { font-size:32px; letter-spacing:6px; color:var(--magenta); text-shadow:0 0 12px var(--magenta); }
+  #overlay p { font-size:14px; color:#9fd8ff; }
+  .btn { cursor:pointer; background:rgba(0,246,255,.1); color:var(--cyan); border:1px solid var(--cyan); padding:10px 22px; border-radius:8px; font-family:inherit; font-size:16px; letter-spacing:2px; box-shadow:0 0 12px rgba(0,246,255,.4); }
+  .btn:active { transform:scale(.96); }
+  .btn.magenta { color:var(--magenta); border-color:var(--magenta); background:rgba(255,0,224,.1); box-shadow:0 0 12px rgba(255,0,224,.4); }
+  #dpad { display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); width:180px; height:180px; gap:6px; }
+  #dpad button { cursor:pointer; background:rgba(0,246,255,.08); border:1px solid rgba(0,246,255,.5); color:var(--cyan); border-radius:10px; font-size:22px; display:flex; align-items:center; justify-content:center; user-select:none; -webkit-user-select:none; touch-action:none; }
+  #dpad button[data-dir="up"] { grid-column:2; grid-row:1; }
+  #dpad button[data-dir="left"] { grid-column:1; grid-row:2; }
+  #dpad button[data-dir="right"] { grid-column:3; grid-row:2; }
+  #dpad button[data-dir="down"] { grid-column:2; grid-row:3; }
+  footer { font-size:12px; color:#7fd0ff; text-align:center; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>SNAKE // NEON</h1>
+      <div class="hud">
+        <div class="pill" id="score">SCORE 0</div>
+        <div class="pill" id="high">HI 0</div>
+      </div>
+    </header>
+    <div id="stage">
+      <canvas id="game" width="400" height="400"></canvas>
+      <div id="overlay">
+        <h2>READY</h2>
+        <p>WASD / FLECHAS / D-PAD</p>
+        <button class="btn" id="start">PLAY</button>
+        <button class="btn magenta" id="pause">PAUSE</button>
+      </div>
+    </div>
+    <div id="dpad">
+      <button data-dir="up">▲</button>
+      <button data-dir="left">◀</button>
+      <button data-dir="right">▶</button>
+      <button data-dir="down">▼</button>
+    </div>
+  </div>
+  <footer>RETRO CYBERPUNK SNAKE // 12 TICKS/SEC</footer>
+</body>
+<script>
+  // JS completo
+</script>
+</html>

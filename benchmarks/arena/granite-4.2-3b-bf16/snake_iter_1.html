@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Retro Snake</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; color: #0f0; }
+    canvas { display: block; }
+    #gameOver {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; justify-content: center; align-items: center;
+      font-family: sans-serif; color: #fff; text-align: center;
+      background: rgba(0, 0, 0, 0.7);
+    }
+    #gameOver button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    #gameOver button:hover { opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="400" height="400"></canvas>
+  <div id="gameOver">
+    <button id="restart">Restart</button>
+    <button id="pause">Pause</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const gameOverDiv = document.getElementById('gameOver');
+    const restartBtn = document.getElementById('restart');
+    const pauseBtn = document.getElementById('pause');
+
+    const GRID_SIZE = 20;
+    const canvasW = canvas.width;
+    const canvasH = canvas.height;
+
+    let snake = [];
+    let direction = { dx: 1, dy: 0 };
+    let food = { x: Math.floor(canvasW / GRID_SIZE), y: Math.floor(canvasH / GRID_SIZE) };
+    let score = 0;
+    let highScore = localStorage.getItem('highScore') ? parseInt(localStorage.getItem('highScore')) : 0;
+    let gameState = 'playing';
+
+    const TARGET_TICKS_PER_SECOND = 12;
+    const TICK_INTERVAL_MS = Math.round(1000 / TARGET_TICKS_PER_SECOND);
+    let lastTickTime = performance.now();
+
+    let inputDirection = { dx: 0, dy: 0 };
+
+    function generateFood() {
+      let f;
+      do {
+        f = {
+          x: Math.floor(Math.random() * GRID_SIZE),
+          y: Math.floor(Math.random() * GRID_SIZE)
+        };
+      } while (snake.some(p => p.x === f.x && p.y === f.y));
+      return f;
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvasW, canvasH);
+
+      // Grid
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i <= GRID_SIZE; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * (canvasW / GRID_SIZE), 0);
+        ctx.lineTo(i * (canvasW / GRID_SIZE), canvasH);
+        ctx.stroke();
+      }
+      for (let i = 0; i <= GRID_SIZE; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, i * (canvasH / GRID_SIZE));
+        ctx.lineTo(canvasW, i * (canvasH / GRID_SIZE));
+        ctx.stroke();
+      }
+
+      // Snake (neon green with slight glow via thicker line)
+      ctx.fillStyle = '#0ff';
+      for (let s of snake) {
+        ctx.beginPath();
+        ctx.moveTo(s.x * (canvasW / GRID_SIZE), s.y * (canvasH / GRID_SIZE));
+        ctx.lineTo((s.x + 1) * (canvasW / GRID_SIZE), (s.y + 1) * (canvasH / GRID_SIZE));
+        ctx.stroke();
+      }
+
+      // Food (yellow)
+      ctx.fillStyle = '#f0f';
+      ctx.beginPath();
+      ctx.arc(food.x * (canvasW / GRID_SIZE) + (canvasW / GRID_SIZE) / 2,
+             food.y * (canvasH / GRID_SIZE) + (canvasH / GRID_SIZE) / 2,
+             (canvasW / GRID_SIZE) / 2,
+             (canvasW / GRID_SIZE) / 2);
+      ctx.fill();
+
+      // Score
+      ctx.fillStyle = '#0f0';
+      ctx.font = '14px sans-serif';
+      ctx.fillText(`Score: ${score}`, 10, 20);
+      ctx.fillText(`High: ${highScore}`, 10, 40);
+
+      if (gameState === 'gameover') {
+        gameOverDiv.style.display = 'flex';
+        restartBtn.style.display = 'block';
+        pauseBtn.style.display = 'block';
+      } else {
+        gameOverDiv.style.display = 'none';
+      }
+    }
+
+    function handleKeyDown(e) {
+      const key = e.key.toLowerCase();
+      let nd = { dx: 0, dy: 0 };
+      if (key === 'w' || key === 'arrowup') nd.dy = -1;
+      if (key === 's' || key === 'arrowdown') nd.dy = 1;
+      if (key === 'a' || key === 'arrowleft') nd.dx = -1;
+      if (key === 'd' || key === 'arrowright') nd.dx = 1;
+      inputDirection = nd;
+    }
+
+    function handleTouchStart(e) {
+      const touch = e.touches[0];
+      const cx = touch.clientX;
+      const cy = touch.clientY;
+      const centerX = canvasW / GRID_SIZE;
+      const centerY = canvasH / GRID_SIZE;
+
+      if (cy < centerY) {
+        inputDirection = { dx: 0, dy: -1 }; // up
+      } else if (cy > centerY) {
+        inputDirection = { dx: 0, dy: 1 }; // down
+      } else if (cx < centerX) {
+        inputDirection = { dx: -1, dy: 0 }; // left
+      } else {
+        inputDirection = { dx: 1, dy: 0 }; // right
+      }
+    }
+
+    function gameLoop() {
+      const now = performance.now();
+      const dt = now - lastTickTime;
+      lastTickTime = now;
+
+      if (gameState === 'gameover') {
+        render();
+        requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      // Process tick if interval elapsed
+      if (dt >= TICK_INTERVAL_MS) {
+        const head = snake[0];
+        const newHead = {
+          x: head.x + inputDirection.dx,
+          y: head.y + inputDirection.dy
+        };
+
+        // Wall collision
+        if (newHead.x < 0 || newHead.x >= GRID_SIZE || newHead.y < 0 || newHead.y >= GRID_SIZE) {
+          gameState = 'gameover';
+          render();
+          requestAnimationFrame(gameLoop);
+          return;
+        }
+
+        // Self collision (except tail)
+        for (let i = 1; i < snake.length; i++) {
+          if (newHead.x === snake[i].x && newHead.y === snake[i].y) {
+            gameState = 'gameover';
+            render();
+            requestAnimationFrame(gameLoop);
+            return;
+          }
+        }
+
+        snake.unshift(newHead);
+
+        // Eat food?
+        if (newHead.x === food.x && newHead.y === food.y) {
+          score += 10;
+          food = generateFood();
+        } else {
+          snake.pop();
+        }
+
+        // Update direction if valid (standard rule: can't reverse immediately)
+        // But we'll just keep inputDirection; the movement check handles collision.
+        // For simplicity, we don't change direction based on wall; the collision check already prevents invalid moves.
+      }
+
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Initialize
+    snake = [{ x: GRID_SIZE / 2, y: GRID_SIZE / 2 }];
+    direction = { dx: 1, dy: 0 };
+    food = generateFood();
+    score = 0;
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('touchstart', handleTouchStart);
+    document.addEventListener('touchend', () => {
+      // No need to do anything; touchstart already set direction
+    });
+
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>

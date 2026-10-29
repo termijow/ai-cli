@@ -3,8 +3,15 @@
 # AI-CLAUDE: Lanza Claude Code apuntando al servidor local (ai-serve)
 # ==============================================================================
 
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+_RAW_SRC="${BASH_SOURCE[0]:-$0}"
+_CLEAN_SRC="${_RAW_SRC//\\//}"
+_DIR="${_CLEAN_SRC%/*}"
+[[ "$_DIR" == "$_CLEAN_SRC" ]] && _DIR="."
+SCRIPT_DIR="$(cd -P "$_DIR" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+if [[ -z "$PROJECT_ROOT" || "$PROJECT_ROOT" == "//" || "$PROJECT_ROOT" == "/" ]] && [[ -n "$AI_CLI_ROOT" ]]; then
+    PROJECT_ROOT="$AI_CLI_ROOT"
+fi
 
 # Cargar .env del proyecto
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -12,23 +19,43 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
 fi
 
 PORT=${PORT:-1234}
+ACTIVE_MODEL="${MODEL_FILE:-local-model}"
 
 export ANTHROPIC_BASE_URL="http://127.0.0.1:${PORT}"
 export ANTHROPIC_AUTH_TOKEN="local"
-export ANTHROPIC_API_KEY=""
+export ANTHROPIC_API_KEY="sk-ant-local-no-key-required"
+export ANTHROPIC_MODEL="$ACTIVE_MODEL"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="$ACTIVE_MODEL"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="$ACTIVE_MODEL"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="$ACTIVE_MODEL"
 
-# 82,000 tokens menos el buffer interno de 33,000 = dispara auto-compact exactamente a los 49,000 tokens
-export CLAUDE_CODE_MAX_CONTEXT_TOKENS="82000"
+# Desactivar tracking attribution header para preservar el KV Cache en local
+export CLAUDE_CODE_ATTRIBUTION_HEADER="0"
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
+
+# Ajuste estricto al contexto de ai-serve (65,536 tokens)
+# Auto-compact programado en 54,000 tokens para que NUNCA desborde ni se muera el servidor
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS="65536"
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW="54000"
 unset DISABLE_AUTO_COMPACT
-unset CLAUDE_CODE_AUTO_COMPACT_WINDOW
 
-# Verificar que el servidor esté corriendo
-if ! curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
-    echo "⚠️  El servidor local no está corriendo en localhost:${PORT}"
-    echo "   Ejecuta 'ai-serve' primero en otra terminal."
+# Timeouts generosos para modelos locales (evita falsos desconexiones durante prompt evaluation de 30k+ tokens)
+export API_TIMEOUT_MS="600000"
+export CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS="600000"
+export CLAUDE_STREAM_IDLE_TIMEOUT_MS="300000"
+export CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS="300000"
+export CLAUDE_CODE_CONNECT_TIMEOUT_MS="60000"
+
+# Sincronizar presupuesto de razonamiento (thinking) de Claude Code con llama-server (1024 tokens)
+export MAX_THINKING_TOKENS="${AI_THINKING_BUDGET:-1024}"
+
+# Verificar si el servidor local está respondiendo
+if ! curl -sf "http://127.0.0.1:${PORT}/health" > /dev/null 2>&1; then
+    echo "⚠️  El servidor local no parece estar corriendo en http://127.0.0.1:${PORT}"
+    echo "   Recuerda iniciar el servidor con 'ai serve' o 'ai start'."
     echo ""
-    read -rp "¿Continuar de todas formas? (s/n): " ans
+    read -rp "¿Intentar conectar a Claude Code de todas formas? (s/n): " ans
     [[ "$ans" != "s" && "$ans" != "S" ]] && exit 1
 fi
 
-exec claude --local "$@"
+exec claude "$@"

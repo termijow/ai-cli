@@ -5,8 +5,15 @@
 # ==============================================================================
 
 # 1. Detectar ubicación y cargar configuración del .env de forma portable
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+_RAW_SRC="${BASH_SOURCE[0]:-$0}"
+_CLEAN_SRC="${_RAW_SRC//\\//}"
+_DIR="${_CLEAN_SRC%/*}"
+[[ "$_DIR" == "$_CLEAN_SRC" ]] && _DIR="."
+SCRIPT_DIR="$(cd -P "$_DIR" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+if [[ -z "$PROJECT_ROOT" || "$PROJECT_ROOT" == "//" || "$PROJECT_ROOT" == "/" ]] && [[ -n "$AI_CLI_ROOT" ]]; then
+    PROJECT_ROOT="$AI_CLI_ROOT"
+fi
 
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
     ENV_FILE="$PROJECT_ROOT/.env"
@@ -124,7 +131,8 @@ case "$AI_HARDWARE_MODE" in
         ;;
     VULKAN)
         echo "🔍 Verificando aceleración Vulkan..."
-        if ! "$REAL_LLAMA_PATH" --list-devices 2>&1 | grep -iqE "Vulkan|AMD|Radeon"; then
+        _vulkan_devs="$("$REAL_LLAMA_PATH" --list-devices 2>&1)"
+        if [[ ! "$_vulkan_devs" =~ (Vulkan|AMD|Radeon) ]]; then
             echo "❌ No se detectó dispositivo Vulkan. Revisa los controladores."
             exit 1
         fi
@@ -248,8 +256,41 @@ esac
 PRESET_DISPLAY_NAME="${PRESET_NAME:-Configuración Personalizada}"
 PRESET_DISPLAY_TOKS="${PRESET_ESTIMATED_TOKS:-Estimado Variable}"
 MAX_TOKENS="${AI_MAX_TOKENS:-${PRESET_MAX_TOKENS:-16384}}"
-MTP_FLAG=${AI_MTP:-${PRESET_MTP:-off}}
-MTP_DRAFT_MAX=${AI_MTP_DRAFT_MAX:-${PRESET_MTP_DRAFT_MAX:-2}}
+
+# Speculative Decoding / MTP / Fit / MMProj / Sampling variables
+SPEC_TYPE="${AI_SPEC_TYPE:-${PRESET_SPEC_TYPE:-}}"
+if [[ -z "$SPEC_TYPE" || "$SPEC_TYPE" == "none" ]]; then
+    if [[ "${AI_MTP:-${PRESET_MTP:-}}" == "on" || "$MODEL_FILE" =~ MTP|mtp ]]; then
+        SPEC_TYPE="draft-mtp"
+    fi
+fi
+if [[ -z "$SPEC_TYPE" ]]; then
+    SPEC_TYPE="none"
+fi
+
+SPEC_DRAFT_N_MAX="${AI_SPEC_DRAFT_N_MAX:-${PRESET_SPEC_DRAFT_N_MAX:-${AI_MTP_DRAFT_MAX:-${PRESET_MTP_DRAFT_MAX:-3}}}}"
+MODEL_DRAFT="${AI_MODEL_DRAFT:-${PRESET_MODEL_DRAFT:-}}"
+DRAFT_PATH=""
+if [[ -n "$MODEL_DRAFT" ]]; then
+    DRAFT_PATH=$(find_model "$MODEL_DRAFT")
+    if [[ -z "$DRAFT_PATH" ]]; then
+        echo -e "\033[0;33m⚠️ ADVERTENCIA: No se encontró el modelo draft '$MODEL_DRAFT'\033[0m"
+    fi
+fi
+
+FIT_VAL="${AI_FIT:-${PRESET_FIT:-}}"
+MMPROJ_VAL="${AI_MMPROJ:-${PRESET_MMPROJ:-}}"
+MMPROJ_PATH=""
+if [[ -n "$MMPROJ_VAL" ]]; then
+    MMPROJ_PATH=$(find_model "$MMPROJ_VAL")
+    if [[ -z "$MMPROJ_PATH" ]]; then
+        echo -e "\033[0;33m⚠️ ADVERTENCIA: No se encontró el archivo mmproj '$MMPROJ_VAL'\033[0m"
+    fi
+fi
+
+TEMP_VAL="${AI_TEMPERATURE:-${PRESET_TEMPERATURE:-}}"
+TOP_P_VAL="${AI_TOP_P:-${PRESET_TOP_P:-}}"
+TOP_K_VAL="${AI_TOP_K:-${PRESET_TOP_K:-}}"
 
 # 7. Interfaz visual de inicio
 echo -e "\033[0;34m╭──────────────────────────────────────────────────────────╮\033[0m"
@@ -264,8 +305,25 @@ echo -e "\033[0;36m│\033[0m 🚀 \033[1mOffload:\033[0m    \033[0;32m$GPU_LAYE
 echo -e "\033[0;36m│\033[0m 💾 \033[1mKV Cache:\033[0m   \033[0;32mK: $CACHE_TYPE_K | V: $CACHE_TYPE_V\033[0m"
 echo -e "\033[0;36m│\033[0m 📦 \033[1mBatch:\033[0m      \033[0;32mBatch: $BATCH_SIZE | UBatch: $UBATCH_SIZE\033[0m"
 echo -e "\033[0;36m│\033[0m 💭 \033[1mThinking:\033[0m   \033[0;32m$REASONING_FLAG ($THINKING_LEVEL, budget: $REASONING_BUDGET)\033[0m"
-if [[ "$MTP_FLAG" == "on" || "$MODEL_FILE" =~ MTP|mtp ]]; then
-echo -e "\033[0;36m│\033[0m ⏩ \033[1mMTP:\033[0m        \033[1;32mActivado (draft-mtp, n-max: $MTP_DRAFT_MAX)\033[0m"
+if [[ "$SPEC_TYPE" != "none" ]]; then
+    if [[ "$SPEC_TYPE" == "draft-mtp" ]]; then
+        echo -e "\033[0;36m│\033[0m 🚀 \033[1mTurbo/MTP:\033[0m  \033[1;32mdraft-mtp ($SPEC_DRAFT_N_MAX tokens)\033[0m"
+    elif [[ "$SPEC_TYPE" == "ngram-simple" ]]; then
+        echo -e "\033[0;36m│\033[0m 🚀 \033[1mTurbo:\033[0m      \033[1;32mN-Gram Simple\033[0m"
+    elif [[ "$SPEC_TYPE" == "draft-simple" ]]; then
+        echo -e "\033[0;36m│\033[0m 🚀 \033[1mTurbo/Draft:\033[0m\033[1;32mdraft-simple ($SPEC_DRAFT_N_MAX tokens)\033[0m"
+    else
+        echo -e "\033[0;36m│\033[0m 🚀 \033[1mTurbo/Spec:\033[0m \033[1;32m$SPEC_TYPE ($SPEC_DRAFT_N_MAX tokens)\033[0m"
+    fi
+    if [[ -n "$MODEL_DRAFT" ]]; then
+        echo -e "\033[0;36m│\033[0m 📎 \033[1mDraft Model:\033[0m\033[0;32m$MODEL_DRAFT\033[0m"
+    fi
+fi
+if [[ -n "$FIT_VAL" ]]; then
+    echo -e "\033[0;36m│\033[0m ⚖️ \033[1mFit Memory:\033[0m \033[0;32m$FIT_VAL\033[0m"
+fi
+if [[ -n "$MMPROJ_PATH" ]]; then
+    echo -e "\033[0;36m│\033[0m 👁️ \033[1mVision/MM:\033[0m  \033[0;32m$(basename "$MMPROJ_PATH")\033[0m"
 fi
 echo -e "\033[0;36m│\033[0m 📤 \033[1mMax Tokens:\033[0m \033[0;32m$MAX_TOKENS tokens (salida)\033[0m"
 echo -e "\033[0;36m│\033[0m 🌐 \033[1mEndpoint:\033[0m   \033[0;32mhttp://localhost:$PORT\033[0m"
@@ -282,12 +340,39 @@ EXTRA_FLAGS=(
     --alias localmodel
     --reasoning "$REASONING_FLAG" \
     --reasoning-budget "$REASONING_BUDGET" \
-    --reasoning-format none \
+    --reasoning-format "${AI_REASONING_FORMAT:-auto}" \
     --predict "$MAX_TOKENS" \
 )
 
-if [[ "$MTP_FLAG" == "on" || "$MODEL_FILE" =~ MTP|mtp ]]; then
-    EXTRA_FLAGS+=(--spec-type draft-mtp --spec-draft-n-max "$MTP_DRAFT_MAX")
+if [[ "$SPEC_TYPE" != "none" ]]; then
+    EXTRA_FLAGS+=(--spec-type "$SPEC_TYPE" --spec-draft-n-max "$SPEC_DRAFT_N_MAX")
+    if [[ -n "$DRAFT_PATH" ]]; then
+        EXTRA_FLAGS+=(--model-draft "$DRAFT_PATH")
+    elif [[ -n "$MODEL_DRAFT" ]]; then
+        EXTRA_FLAGS+=(--model-draft "$MODEL_DRAFT")
+    fi
+fi
+
+if [[ -n "$FIT_VAL" ]]; then
+    EXTRA_FLAGS+=(--fit "$FIT_VAL")
+fi
+
+if [[ -n "$MMPROJ_PATH" ]]; then
+    EXTRA_FLAGS+=(-mm "$MMPROJ_PATH")
+elif [[ -n "$MMPROJ_VAL" ]]; then
+    EXTRA_FLAGS+=(-mm "$MMPROJ_VAL")
+fi
+
+if [[ -n "$TEMP_VAL" ]]; then
+    EXTRA_FLAGS+=(--temp "$TEMP_VAL")
+fi
+
+if [[ -n "$TOP_P_VAL" ]]; then
+    EXTRA_FLAGS+=(--top-p "$TOP_P_VAL")
+fi
+
+if [[ -n "$TOP_K_VAL" ]]; then
+    EXTRA_FLAGS+=(--top-k "$TOP_K_VAL")
 fi
 
 # 8. Verificación previa de ejecución y compatibilidad

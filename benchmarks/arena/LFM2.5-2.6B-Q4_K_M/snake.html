@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snake Arcade Retro</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+    }
+    #game-container {
+      position: relative;
+      border: 2px solid #00ffcc;
+      box-shadow: 0 0 30px rgba(0, 255, 204, 0.3);
+    }
+    canvas {
+      display: block;
+      background: #0a0a0a;
+    }
+    #ui-overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #00ffcc;
+      font-size: 14px;
+      text-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
+      pointer-events: none;
+    }
+    #score-display {
+      position: absolute;
+      top: 80px;
+      right: 20px;
+      color: #ffcc00;
+      font-size: 24px;
+      font-weight: bold;
+      text-shadow: 0 0 10px rgba(255, 204, 0, 0.5);
+    }
+    #high-score {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      color: #00ffcc;
+      font-size: 14px;
+    }
+    #game-over-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    #game-over-screen.active {
+      opacity: 1;
+    }
+    .btn {
+      background: #00ffcc;
+      color: #000;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-family: 'Courier New', monospace;
+      cursor: pointer;
+      transition: transform 0.2s;
+      border-radius: 4px;
+    }
+    .btn:hover { transform: scale(1.1); }
+    .btn:active { transform: scale(0.95); }
+    #pause-btn {
+      background: #ff4444;
+      color: #fff;
+      font-size: 14px;
+    }
+    #reset-btn {
+      background: #00ffcc;
+      color: #000;
+      font-size: 14px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas"></canvas>
+    <div id="ui-overlay">
+      <div>Puntuación: <span id="score-display">0</span></div>
+      <div>Récord: <span id="high-score">0</span></div>
+    </div>
+    <div id="game-over-screen" class="active">
+      <h1>GAME OVER</h1>
+      <p>Puntuación: <span id="final-score">0</span></p>
+      <button class="btn" id="reset-btn">Reiniciar</button>
+      <button class="btn" id="pause-btn">Pausa</button>
+    </div>
+  </div>
+
+  <script>
+    // ============================================
+    // CONFIGURACIÓN DEL JUEGO
+    // ============================================
+    const CANVAS_WIDTH = 600;
+    const CANVAS_HEIGHT = 600;
+    const GRID_SIZE = 20;
+    const COLS = CANVAS_WIDTH / GRID_SIZE;
+    const ROWS = CANVAS_HEIGHT / GRID_SIZE;
+
+    // Colores retro arcade
+    const COLOR_BG = '#0a0a0a';
+    const COLOR_SERPENTINE = '#00ffcc';
+    const COLOR_FOOD = '#ffcc00';
+    const COLOR_HIGHSCORE = '#ff00ff';
+    const COLOR_PARTICLE = '#ffffff';
+
+    // Velocidad: 12 ticks por segundo (aprox 5ms por tick)
+    const TICK_RATE = 12;
+    const TICK_INTERVAL = 1000 / TICK_RATE;
+
+    // ============================================
+    // INICIALIZACIÓN
+    // ============================================
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Ajuste de escala para móviles
+    function resizeCanvas() {
+      const container = document.getElementById('game-container');
+      const maxWidth = container.clientWidth - 40;
+      const maxHeight = container.clientHeight - 100;
+      if (maxWidth < maxHeight) {
+        canvas.width = maxWidth;
+        canvas.height = maxWidth;
+      } else {
+        canvas.width = canvas.width;
+        canvas.height = maxHeight;
+      }
+    }
+    resizeCanvas();
+
+    // ============================================
+    // ESTADO DEL JUEGO
+    // ============================================
+    let gameState = 'playing'; // 'playing' | 'paused' | 'gameover'
+    let score = 0;
+    let highScore = parseInt(localStorage.getItem('snake_highscore') || '0');
+
+    // Cola de la serpiente: array de posiciones [{x, y}, ...]
+    let snake = [];
+    let food = null;
+
+    // Partículas para efectos visuales
+    let particles = [];
+
+    // Audio context para sonidos sintetizados
+    let audioCtx = null;
+
+    // Screen shake
+    let shakeX = 0;
+    let shakeY = 0;
+    const SHAKE_DURATION = 150; // ms
+
+    // ============================================
+    // SISTEMA DE AUDIO (Web Audio API)
+    // ============================================
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+
+    function playSound(frequency, type = 'sine', duration = 0.2, volume = 0.3) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.value = frequency;
+      gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+      gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    // Sonidos predefinidos
+    const SOUND_COME = { freq: 440, type: 'sine', duration: 0.1, volume: 0.4 };
+    const SOUND_MORTEM = { freq: 200, type: 'sawtooth', duration: 0.3, volume: 0.5 };
+    const SOUND_FOOD = { freq: 600, type: 'sine', duration: 0.2, volume: 0.5 };
+    const SOUND_VICTORY = { freq: 800, type: 'sine', duration: 0.5, volume: 0.6 };
+
+    // ============================================
+    // CREACIÓN DE ELEMENTOS
+    // ============================================
+    function createSnake() {
+      // Serpiente inicial: 3 segmentos en forma de L
+      const startX = Math.floor(COLS / 2);
+      const startY = Math.floor(ROWS / 2);
+      snake = [
+        { x: startX, y: startY },
+        { x: startX - 1, y: startY },
+        { x: startX - 2, y: startY }
+      ];
+    }
+
+    function createFood() {
+      // Buscar posición aleatoria no ocupada por la serpiente
+      let newFood;
+      do {
+        newFood = {
+          x: Math.floor(Math.random() * COLS),
+          y: Math.floor(Math.random() * ROWS)
+        };
+      } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y));
+
+      food = newFood;
+    }
+
+    function spawnParticles(x, y, color, count = 8) {
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: x * GRID_SIZE + GRID_SIZE / 2,
+          y: y * GRID_SIZE + GRID_SIZE / 2,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          life: Math.random() * 100 + 50,
+          maxLife: 100,
+          color: color,
+          size: Math.random() * 4 + 2
+        });
+      }
+    }
+
+    // ============================================
+    // LÓGICA DEL JUEGO
+    // ============================================
+    function update() {
+      if (gameState !== 'playing') return;
+
+      // Mover la cola: cada segmento avanza un paso
+      const head = snake[0];
+      const newHead = {
+        x: head.x + (head.x % GRID_SIZE) === 0 ? -GRID_SIZE : head.x + 1,
+        y: head.y + (head.y % GRID_SIZE) === 0 ? -GRID_SIZE : head.y + 1
+      };
+
+      if (gameState === 'gameover') return;
+
+      // Verificar colisión con paredes
+      if (newHead.x < 0 || newHead.x >= COLS || newHead.y < 0 || newHead.y >= ROWS) {
+        gameOver();
+        return;
+      }
+
+      // Verificar colisión consigo misma (excepto la cabeza)
+      for (let i = 1; i < snake.length; i++) {
+        if (newHead.x === snake[i].x && newHead.y === snake[i].y) {
+          gameOver();
+          return;
+        }
+      }
+
+      snake.unshift(newHead);
+
+      // Verificar si comió la comida
+      if (newHead.x === food.x && newHead.y === food.y) {
+        // Crear partículas
+        spawnParticles(newHead.x, newHead.y, COLOR_FOOD, 12);
+
+        // Aumentar puntuación
+        score += 10;
+        updateScoreDisplay();
+
+        // Mover la cola (quitar cola si no comió)
+        if (snake.length > 1) {
+          snake.pop();
+        } else {
+          // Si la serpiente murió, se reiniciará
+        }
+
+        // Sonido de comida
+        playSound(SOUND_FOOD);
+      } else {
+        // No comió, mover la cola
+        snake.pop();
+      }
+
+      // Sonido de movimiento (opcional, para dar feedback)
+      playSound(SOUND_COME);
+    }
+
+    function gameOver() {
+      gameState = 'gameover';
+      const finalScore = score;
+      localStorage.setItem('snake_highscore', Math.max(highScore, finalScore));
+      highScore = Math.max(highScore, finalScore);
+
+      // Efecto de screen shake
+      shakeX = (Math.random() - 0.5) * 60;
+      shakeY = (Math.random() - 0.5) * 60;
+
+      // Mostrar pantalla de game over
+      const screen = document.getElementById('game-over-screen');
+      screen.classList.add('active');
+      document.getElementById('final-score').textContent = finalScore;
+      document.getElementById('reset-btn').onclick = () => resetGame();
+    }
+
+    function resetGame() {
+      gameState = 'playing';
+      score = 0;
+      snake = createSnake();
+      createFood();
+      particles = [];
+      shakeX = 0;
+      shakeY = 0;
+      updateScoreDisplay();
+      hideGameOver();
+    }
+
+    function pauseGame() {
+      if (gameState === 'playing') {
+        gameState = 'paused';
+      }
+    }
+
+    function hideGameOver() {
+      const screen = document.getElementById('game-over-screen');
+      screen.classList.remove('active');
+    }
+
+    function updateScoreDisplay() {
+      document.getElementById('score-display').textContent = score;
+      document.getElementById('high-score').textContent = highScore;
+    }
+
+    // ============================================
+    // RENDERIZADO
+    // ============================================
+    function render() {
+      // Aplicar screen shake
+      ctx.save();
+      ctx.translate(shakeX, shakeY);
+
+      // Dibujar rejilla sutil
+      drawGrid();
+
+      // Dibujar serpiente
+      drawSnake();
+
+      // Dibujar comida
+      if (food) {
+        drawFood();
+      }
+
+      // Dibujar partículas
+      drawParticles();
+
+      ctx.restore();
+    }
+
+    function drawGrid() {
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, CANVAS_HEIGHT);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= CANVAS_HEIGHT; y += GRID_SIZE) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(CANVAS_WIDTH, y);
+        ctx.stroke();
+      }
+    }
+
+    function drawSnake() {
+      snake.forEach((segment, index) => {
+        const x = segment.x * GRID_SIZE;
+        const y = segment.y * GRID_SIZE;
+
+        // Efecto de brillo en la cabeza
+        if (index === 0) {
+          const alpha = 1.5 + Math.random() * 0.5;
+          ctx.fillStyle = `rgba(0, 255, 204, ${alpha})`;
+        } else {
+          ctx.fillStyle = COLOR_SERPENTINE;
+        }
+
+        // Círculo con gradiente sutil
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, GRID_SIZE / 2);
+        gradient.addColorStop(0, `rgba(0, 255, 204, 0.3)`);
+        gradient.addColorStop(1, `rgba(0, 200, 100, 0.1)`);
+        ctx.beginPath();
+        ctx.arc(x, y, GRID_SIZE / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Detalle de cola (línea fina)
+        ctx.strokeStyle = `rgba(0, 255, 204, 0.4)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + (index < 2 ? 2 : 0), y + (index < 2 ? 2 : 0));
+        ctx.stroke();
+      });
+    }
+
+    function drawFood() {
+      const x = food.x * GRID_SIZE;
+      const y = food.y * GRID_SIZE;
+
+      // Glow
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, GRID_SIZE);
+      glow.addColorStop(0, 'rgba(255, 204, 0, 0.3)');
+      glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x, y, GRID_SIZE / 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Círculo de comida
+      ctx.fillStyle = COLOR_FOOD;
+      ctx.beginPath();
+      ctx.arc(x, y, GRID_SIZE / 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawParticles() {
+      particles.forEach(p => {
+        ctx.globalAlpha = p.life / p.maxLife;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    // ============================================
+    // CONTROLES
+    // ============================================
+    function handleKeyDown(e) {
+      if (gameState !== 'playing') return;
+
+      switch (e.key) {
+        case 'ArrowUp': case 'w': case 'W':
+          if (e.ctrlKey || e.metaKey) pauseGame();
+          else { moveSnake(-1, 0); }
+          break;
+        case 'ArrowDown': case 's': case 'S':
+          if (e.ctrlKey || e.metaKey) pauseGame();
+          else { moveSnake(1, 0); }
+          break;
+        case 'ArrowLeft': case 'a': case 'A':
+          if (e.ctrlKey || e.metaKey) pauseGame();
+          else { moveSnake(0, -1); }
+          break;
+        case 'ArrowRight': case 'd': case 'D':
+          if (e.ctrlKey || e.metaKey) pauseGame();
+          else { moveSnake(1, 0); }
+          break;
+      }
+    }
+
+    function moveSnake(dx, dy) {
+      const head = snake[0];
+      const newHead = {
+        x: head.x + dx,
+        y: head.y + dy
+      };
+
+      if (gameState === 'gameover') return;
+
+      // Verificar colisión con paredes
+      if (newHead.x < 0 || newHead.x >= COLS || newHead.y < 0 || newHead.y >= ROWS) {
+        gameOver();
+        return;
+      }
+
+      // Verificar colisión consigo misma
+      for (let i = 1; i < snake.length; i++) {
+        if (newHead.x === snake[i].x && newHead.y === snake[i].y) {
+          gameOver();
+          return;
+        }
+      }
+
+      snake.unshift(newHead);
+    }
+
+    // ============================================
+    // CONTROLES TÁCTILES (MÓVILES)
+    // ============================================
+    const touchDirs = {
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 }
+    };
+
+    function setupTouchControls() {
+      const container = document.getElementById('game-container');
+      let touchStartX = 0;
+      let touchStartY = 0;
+
+      container.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+
+      container.addEventListener('touchend', (e) => {
+        const touch = e.changedTouches[0];
+        const dx = (touch.x - touchStartX) / window.innerWidth;
+        const dy = (touch.y - touchStartY) / window.innerHeight;
+
+        // Mapear a direcciones
+        let dir;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          dir = dx > 0 ? touchDirs.right : touchDirs.left;
+        } else {
+          dir = dy > 0 ? touchDirs.down : touchDirs.up;
+        }
+
+        moveSnake(dir.x, dir.y);
+      });
+    }
+
+    // ============================================
+    // BUCLE DE JUEGO
+    // ============================================
+    function gameLoop(timestamp) {
+      if (gameState === 'playing' || gameState === 'paused') {
+        update();
+      }
+
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // ============================================
+    // INICIALIZACIÓN
+    // ============================================
+    function init() {
+      // Crear serpiente inicial
+      createSnake();
+
+      // Crear comida inicial
+      createFood();
+
+      // Inicializar audio
+      initAudio();
+
+      // Mostrar UI
+      updateScoreDisplay();
+
+      // Configurar controles
+      setupTouchControls();
+
+      // Iniciar bucle
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Event listener para pausa (Ctrl+P)
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'p' || e.key === 'P' || e.ctrlKey) {
+        if (gameState === 'playing') pauseGame();
+        else if (gameState === 'paused') gameState = 'playing';
+      }
+    });
+
+    // Iniciar
+    init();
+  </script>
+</body>
+</html>

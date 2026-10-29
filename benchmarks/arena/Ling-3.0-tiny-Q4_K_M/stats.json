@@ -1,0 +1,43 @@
+{
+  "id": "Ling-3.0-tiny-Q4_K_M",
+  "model": "Ling-3.0-tiny-Q4_K_M",
+  "score": 78,
+  "speed_tps": 0.0,
+  "tokens": 0,
+  "time_sec": 0.0,
+  "iterations": 2,
+  "has_preview": true,
+  "file_size_kb": 15.4,
+  "user_rank": "Pésimo",
+  "user_rating": "2/10",
+  "user_review": "Para los tokens que gastó me pareció una remierda. Nivel visual y funcional muy bajo.",
+  "playable": false,
+  "passed_checks": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Estructura de Game Loop con requestAnimationFrame (+3)",
+    "Web Audio API completa con sintetizador procedimental y .resume() en interacción (+15)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ],
+  "failed_checks": [
+    "BUG CRÍTICO DE BUCLE CONGELADO: Estás comparando delta time sin acumularlo entre frames (ej: 'lastTime = timestamp' en cada frame). En 60Hz delta es ~16ms, por lo que nunca alcanza el umbral de tick y la serpiente queda inmóvil. Solución: usa un acumulador de tiempo (accumulator += deltaTime; if (accumulator >= tickMs) { update(); accumulator = 0; }).",
+    "BUG RUNTIME JAVASCRIPT: TypeError: Cannot read properties of undefined (reading 'dir'). Asegúrate de que todas las variables y elementos del DOM estén definidos en el ámbito (scope) correcto."
+  ],
+  "details": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Estructura de Game Loop con requestAnimationFrame (+3)",
+    "Web Audio API completa con sintetizador procedimental y .resume() en interacción (+15)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)",
+    "PENDIENTE: BUG CRÍTICO DE BUCLE CONGELADO: Estás comparando delta time sin acumularlo entre frames (ej: 'lastTime = timestamp' en cada frame). En 60Hz delta es ~16ms, por lo que nunca alcanza el umbral de tick y la serpiente queda inmóvil. Solución: usa un acumulador de tiempo (accumulator += deltaTime; if (accumulator >= tickMs) { update(); accumulator = 0; }).",
+    "PENDIENTE: BUG RUNTIME JAVASCRIPT: TypeError: Cannot read properties of undefined (reading 'dir'). Asegúrate de que todas las variables y elementos del DOM estén definidos en el ámbito (scope) correcto."
+  ]
+}

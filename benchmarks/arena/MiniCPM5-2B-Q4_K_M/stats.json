@@ -1,0 +1,11 @@
+{
+  "model": "MiniCPM5-2B-Q4_K_M.gguf",
+  "size_gb": 1.45,
+  "tokens": 57874,
+  "time_s": 704.36,
+  "speed": 46.35,
+  "score": 85,
+  "iterations": 4,
+  "out_file": "C:\\Users\\USUARIO\\Documents\\ai-cli\\benchmarks\\arena\\MiniCPM5-2B-Q4_K_M\\snake.html",
+  "timestamp": "2026-10-25 11:06:18"
+}

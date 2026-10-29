@@ -1,8 +1,15 @@
 #!/bin/bash
 
 # Detectar ubicación del script de forma portable
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+_RAW_SRC="${BASH_SOURCE[0]:-$0}"
+_CLEAN_SRC="${_RAW_SRC//\\//}"
+_DIR="${_CLEAN_SRC%/*}"
+[[ "$_DIR" == "$_CLEAN_SRC" ]] && _DIR="."
+SCRIPT_DIR="$(cd -P "$_DIR" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+if [[ -z "$PROJECT_ROOT" || "$PROJECT_ROOT" == "//" || "$PROJECT_ROOT" == "/" ]] && [[ -n "$AI_CLI_ROOT" ]]; then
+    PROJECT_ROOT="$AI_CLI_ROOT"
+fi
 
 # Localizar .env
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -230,6 +237,21 @@ fi
 handle_services() {
     local subaction="${1:-start}"
     shift 2>/dev/null || true
+
+    # Localizar intérprete de Python preferido (venv o sistema)
+    local py_bin="${PYTHON_CMD:-python}"
+    if [[ -f "$PROJECT_ROOT/venv/Scripts/python.exe" ]]; then
+        py_bin="$PROJECT_ROOT/venv/Scripts/python.exe"
+    elif [[ -f "$PROJECT_ROOT/venv/bin/python" ]]; then
+        py_bin="$PROJECT_ROOT/venv/bin/python"
+    fi
+
+    # master.py maneja de forma multiplataforma nativa Windows, macOS y Linux
+    if [[ -f "$PROJECT_ROOT/master.py" ]]; then
+        "$py_bin" "$PROJECT_ROOT/master.py" "$subaction" "$@"
+        return $?
+    fi
+
     if [[ ! -f "$PROJECT_ROOT/start-all.sh" ]]; then
         echo "❌ No se encontró start-all.sh."
         return 1

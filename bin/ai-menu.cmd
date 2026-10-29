@@ -1,6 +1,9 @@
 @echo off
 setlocal
 set "SCRIPT_DIR=%~dp0"
+set "SCRIPT_DIR=%SCRIPT_DIR:\=/%"
+for %%I in ("%~dp0..") do set "AI_CLI_ROOT=%%~fI"
+set "AI_CLI_ROOT=%AI_CLI_ROOT:\=/%"
 set "BASH_EXE="
 
 if exist "%LOCALAPPDATA%\Programs\Git\bin\bash.exe" set "BASH_EXE=%LOCALAPPDATA%\Programs\Git\bin\bash.exe"

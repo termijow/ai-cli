@@ -1,0 +1,38 @@
+{
+  "id": "Qwen3.5-9B-Q4_K_M",
+  "model": "Qwen3.5-9B-Q4_K_M",
+  "score": 100,
+  "speed_tps": 0.0,
+  "tokens": 0,
+  "time_sec": 0.0,
+  "iterations": 1,
+  "has_preview": true,
+  "file_size_kb": 19.2,
+  "user_rank": "Roto",
+  "user_rating": "2/10",
+  "user_review": "Rankea alto en benchmarks pero el script falló por variables fuera de scope (ReferenceError).",
+  "playable": false,
+  "passed_checks": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Bucle de juego (Game Loop) continuo y funcional (+10)",
+    "Web Audio API completa con sintetizador procedimental y .resume() en interacción (+15)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ],
+  "failed_checks": [],
+  "details": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Bucle de juego (Game Loop) continuo y funcional (+10)",
+    "Web Audio API completa con sintetizador procedimental y .resume() en interacción (+15)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ]
+}

@@ -1,0 +1,366 @@
+```html
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SNAKE // NEON</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body {
+    background:#05060a;
+    color:#cfe8ff;
+    font-family: "Courier New", monospace;
+    overflow:hidden;
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  #wrap {
+    position:fixed; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify:center;
+    gap:14px;
+  }
+  #stage { position:relative; }
+  canvas {
+    display:block;
+    width:400px; height:400px;
+    background:#070b12;
+    border:2px solid #123;
+    box-shadow:0 0 22px rgba(0,255,200,.25), inset 0 0 12px rgba(0,255,200,.15);
+  }
+  #hud { display:flex; gap:18px; font-size:15px; letter-spacing:2px; }
+  #hud span b { color:#7fffd0; }
+  #overlay {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify:center; gap:14px;
+    background:rgba(3,6,12,.72);
+    backdrop-filter: blur(2px);
+  }
+  #overlay.hidden { display:none; }
+  #overlay h1 {
+    font-size:34px; letter-spacing:4px;
+    color:#eaffff;
+    text-shadow:0 0 12px #0ff, 0 0 30px #0ff;
+  }
+  #overlay p { font-size:14px; color:#9fd8ff; }
+  .btn {
+    cursor:pointer;
+    background:#0a1420;
+    color:#7fffd0;
+    border:1px solid #1f6f7f;
+    padding:10px 22px;
+    font-family:inherit;
+    letter-spacing:2px;
+    box-shadow:0 0 10px rgba(0,255,200,.3);
+  }
+  .btn:active { background:#123; }
+  #dpad {
+    display:grid;
+    grid-template-columns:repeat(3, 64px);
+    grid-template-rows:repeat(3, 64px);
+    gap:6px;
+  }
+  #dpad button {
+    width:64px; height:64px;
+    background:#0a1420;
+    color:#7fffd0;
+    border:1px solid #1f6f7f;
+    font-size:22px;
+    box-shadow:0 0 8px rgba(0,255,200,.25);
+    touch-action:none;
+  }
+  #dpad button:active { background:#123; }
+  #dpad .u { grid-column:2; grid-row:1; }
+  #dpad .l { grid-column:1; grid-row:2; }
+  #dpad .c { grid-column:2; grid-row:2; }
+  #dpad .r { grid-column:3; grid-row:2; }
+  #dpad .d { grid-column:2; grid-row:3; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <span>SCORE <b id="score">0</b></span>
+    <span>HI <b id="hi">0</b></span>
+  </div>
+  <div id="stage">
+    <canvas id="game" width="400" height="400"></canvas>
+    <div id="overlay" class="hidden">
+      <h1 id="title">READY</h1>
+      <p id="msg">Pulsa PLAY para empezar</p>
+      <button id="play" class="btn">PLAY</button>
+      <button id="pause" class="btn">PAUSE</button>
+    </div>
+  </div>
+  <div id="dpad">
+    <button class="u" data-dir="up">&#9650;</button>
+    <button class="l" data-dir="left">&#9664;</button>
+    <button class="c" data-dir="center">&#9679;</button>
+    <button class="r" data-dir="right">&#9658;</button>
+    <button class="d" data-dir="down">&#9660;</button>
+  </div>
+</div>
+<script>
+(function(){
+  'use strict';
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const N = 20;
+  const cell = canvas.width / N;
+  const scoreEl = document.getElementById('score');
+  const hiEl = document.getElementById('hi');
+  const overlay = document.getElementById('overlay');
+  const titleEl = document.getElementById('title');
+  const msgEl = document.getElementById('msg');
+  const playBtn = document.getElementById('play');
+  const pauseBtn = document.getElementById('pause');
+  const dpad = document.getElementById('dpad');
+
+  const KEY = 'snakeHigh';
+  const hi = parseInt(localStorage.getItem(KEY) || '0', 10) || 0;
+  hiEl.textContent = hi;
+
+  let snake, dir, food, score, running, paused, dead;
+  let particles = [];
+  let shake = 0;
+  let acc = 0;
+  let last = 0;
+  let audio = null;
+
+  function ensureAudio(){
+    if(!audio){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audio = new AC();
+    }
+    if(audio.state === 'suspended') audio.resume();
+  }
+
+  function beep(freq, dur, type, vol){
+    ensureAudio();
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    g.gain.value = vol;
+    o.connect(g);
+    g.connect(audio.destination);
+    o.start();
+    o.stop(audio.currentTime + dur);
+  }
+
+  function sfxEat(){
+    beep(660, 0.08, 'square', 0.18);
+    beep(990, 0.12, 'square', 0.14);
+  }
+  function sfxDie(){
+    beep(120, 0.5, 'sawtooth', 0.25);
+    beep(60, 0.7, 'sawtooth', 0.2);
+  }
+
+  function placeFood(){
+    let x, y, ok;
+    do {
+      x = Math.floor(Math.random()*N);
+      y = Math.floor(Math.random()*N);
+      ok = snake.some(s => s.x===x && s.y===y);
+    } while(ok);
+    food = {x, y};
+  }
+
+  function reset(){
+    snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+    dir = {x:1,y:0};
+    score = 0;
+    particles = [];
+    shake = 0;
+    acc = 0;
+    dead = false;
+    scoreEl.textContent = 0;
+    placeFood();
+  }
+
+  function showOverlay(t){
+    titleEl.textContent = t;
+    overlay.classList.remove('hidden');
+  }
+  function hideOverlay(){
+    overlay.classList.add('hidden');
+  }
+
+  function tick(){
+    const head = snake[0];
+    const nx = head.x + dir.x;
+    const ny = head.y + dir.y;
+    if (nx < 0 || nx >= N || ny < 0 || ny >= N) return die();
+    if (snake.some(s => s.x===nx && s.y===ny)) return die();
+    snake.unshift({x:nx, y:ny});
+    if (nx === food.x && ny === food.y) {
+      score += 10;
+      scoreEl.textContent = score;
+      spawnParticles({x:nx, y:ny});
+      sfxEat();
+      placeFood();
+    } else {
+      snake.pop();
+    }
+  }
+
+  function die(){
+    dead = true;
+    running = false;
+    shake = 14;
+    sfxDie();
+    if (score > hi){
+      hi = score;
+      localStorage.setItem(KEY, String(hi));
+      hiEl.textContent = hi;
+    }
+    showOverlay('GAME OVER');
+  }
+
+  function spawnParticles(p){
+    const cx = p.x*cell + cell/2;
+    const cy = p.y*cell + cell/2;
+    for (let i=0;i<22;i++){
+      const a = Math.random()*Math.PI*2;
+      const sp = 1.5 + Math.random()*3.5;
+      particles.push({
+        x:cx, y:cy,
+        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+        life:1, hue:180 + Math.random()*60
+      });
+    }
+  }
+
+  function updateParticles(dt){
+    for (let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.15;
+      p.life -= dt*1.6;
+      if (p.life <= 0) particles.splice(i,1);
+    }
+  }
+
+  function draw(){
+    ctx.save();
+    if (shake > 0){
+      ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
+      shake *= 0.86;
+      if (shake < 0.4) shake = 0;
+    }
+    ctx.fillStyle = '#070b12';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = 'rgba(0,255,200,0.07)';
+    ctx.lineWidth = 1;
+    for (let i=0;i<=N;i++){
+      ctx.beginPath();
+      ctx.moveTo(i*cell,0);
+      ctx.lineTo(i*cell,canvas.height);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0,i*cell);
+      ctx.lineTo(canvas.width,i*cell);
+      ctx.stroke();
+    }
+    for (let i=0;i<snake.length;i++){
+      const s = snake[i];
+      const t = i / snake.length;
+      const r = Math.round(255 - t*255);
+      const g = Math.round(246 - t*246);
+      const b = 255;
+      ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+      ctx.shadowColor = 'rgba(0,255,200,0.6)';
+      ctx.shadowBlur = 10;
+      ctx.fillRect(s.x*cell+1, s.y*cell+1, cell-2, cell-2, 1);
+    }
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ff3df0';
+    ctx.shadowColor = 'rgba(255,60,255,0.8)';
+    ctx.shadowBlur = 14;
+    ctx.fillRect(food.x*cell+2, food.y*cell+2, cell-4, cell-4, 1);
+    ctx.shadowBlur = 0;
+    for (const p of particles){
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = 'hsl(' + p.hue + ',100%,60%)';
+      ctx.fillRect(p.x, p.y, 3, 3);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  function loop(t){
+    const dt = Math.min(0.05, (t - last)/1000);
+    last = t;
+    if (running && !paused){
+      acc += dt;
+      const step = 1/12;
+      while (acc >= step){
+        tick();
+        acc -= step;
+        if (!running) break;
+      }
+    }
+    updateParticles(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function setDir(x,y){
+    if (!running || paused || dead) return;
+    const head = snake[0];
+    if (head.x===1 && head.y===0) return;
+    if (x===0 && y===1) return;
+    if (x===1 && y===0) return;
+    if (x===0 && y===-1) return;
+    if (x===-1 && y===0) return;
+    dir = {x,y};
+  }
+
+  playBtn.addEventListener('click', function(){
+    ensureAudio();
+    reset();
+    running = true;
+    hideOverlay();
+  });
+
+  pauseBtn.addEventListener('click', function(){
+    paused = !paused;
+    if (paused) showOverlay('PAUSE');
+    else hideOverlay();
+  });
+
+  window.addEventListener('keydown', function(e){
+    ensureAudio();
+    const k = e.key;
+    if (k==='ArrowUp' || k==='w') setDir(0,-1);
+    if (k==='ArrowDown' || k==='s') setDir(0,1);
+    if (k==='ArrowLeft' || k==='a') setDir(-1,0);
+    if (k==='ArrowRight' || k==='d') setDir(1,0);
+    if (k==='Enter' && !running){
+      ensureAudio();
+      reset();
+      running = true;
+      hideOverlay();
+    }
+  });
+
+  function handleDir(el){
+    const d = el.dataset.dir;
+    if (d==='up') setDir(0,-1);
+    if (d==='down') setDir(0,1);
+    if (d==='left') setDir(-1,0);
+    if (d==='right') setDir(1,0);
+  }
+  dpad.addEventListener('touchstart', function(e){
+    const el = e.target;
+    if (el && el.dataset && el.dataset.dir) handleDir(el);
+  });
+  dpad.addEventListener('touchend', function(e){
+    const el = e.target;
+    if (el && el.dataset && el.dataset.dir) handleDir(el);
+  });
+  dpad.addEventListener('mousedown', function(e){
+    const el = e.target;
+    if (el && el.dataset && el.dataset.dir) handleDir(el

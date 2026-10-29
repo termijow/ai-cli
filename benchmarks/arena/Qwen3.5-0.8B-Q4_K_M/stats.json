@@ -1,0 +1,41 @@
+{
+  "id": "Qwen3.5-0.8B-Q4_K_M",
+  "model": "Qwen3.5-0.8B-Q4_K_M",
+  "score": 66,
+  "speed_tps": 0.0,
+  "tokens": 0,
+  "time_sec": 0.0,
+  "iterations": 4,
+  "has_preview": true,
+  "file_size_kb": 53.3,
+  "user_rank": "Pésimo",
+  "user_rating": "1/10",
+  "user_review": "Demasiado pequeño para un juego completo sin alucinaciones.",
+  "playable": false,
+  "passed_checks": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "AudioContext inicializado pero faltan osciladores (+6)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ],
+  "failed_checks": [
+    "No se encontró bloque <script> con código JavaScript ejecutable.",
+    "Falta bucle de juego continuo (requestAnimationFrame o setInterval).",
+    "Web Audio API incompleta: usa createOscillator() y createGain() para sintetizar sonidos al comer y morir."
+  ],
+  "details": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "AudioContext inicializado pero faltan osciladores (+6)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)",
+    "PENDIENTE: No se encontró bloque <script> con código JavaScript ejecutable.",
+    "PENDIENTE: Falta bucle de juego continuo (requestAnimationFrame o setInterval).",
+    "PENDIENTE: Web Audio API incompleta: usa createOscillator() y createGain() para sintetizar sonidos al comer y morir."
+  ]
+}

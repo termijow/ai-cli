@@ -7,8 +7,14 @@ set -e
 
 # Cargar configuración del .env de forma portable
 _CORE_SOURCE="${BASH_SOURCE[0]:-$0}"
-SCRIPT_DIR="$(cd -P "$(dirname "$_CORE_SOURCE")" >/dev/null 2>&1 && pwd -P)"
+_CLEAN_CORE="${_CORE_SOURCE//\\//}"
+_CORE_DIR="${_CLEAN_CORE%/*}"
+[[ "$_CORE_DIR" == "$_CLEAN_CORE" ]] && _CORE_DIR="."
+SCRIPT_DIR="$(cd -P "$_CORE_DIR" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+if [[ -z "$PROJECT_ROOT" || "$PROJECT_ROOT" == "//" || "$PROJECT_ROOT" == "/" ]] && [[ -n "$AI_CLI_ROOT" ]]; then
+    PROJECT_ROOT="$AI_CLI_ROOT"
+fi
 
 # Asegurar que curl use el ejecutable del sistema en Windows si el de PortableGit está restringido
 if [[ -f "/c/WINDOWS/system32/curl.exe" ]]; then

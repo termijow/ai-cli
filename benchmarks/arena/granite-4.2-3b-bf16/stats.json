@@ -1,0 +1,11 @@
+{
+  "model": "granite-4.2-3b-bf16.gguf",
+  "size_gb": 6.82,
+  "tokens": 69078,
+  "time_s": 9002.49,
+  "speed": 3.87,
+  "score": 85,
+  "iterations": 4,
+  "out_file": "C:\\Users\\USUARIO\\Documents\\ai-cli\\benchmarks\\arena\\granite-4.2-3b-bf16\\snake.html",
+  "timestamp": "2026-10-25 06:25:22"
+}

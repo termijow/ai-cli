@@ -12,6 +12,7 @@ import {
   Activity, 
   ShieldCheck, 
   Zap,
+  Trophy,
   Lock,
   Key,
   LogOut,
@@ -24,6 +25,7 @@ import SummaryTool from './components/SummaryTool';
 import TranslateTool from './components/TranslateTool';
 import ExtractTool from './components/ExtractTool';
 import Settings from './components/Settings';
+import BenchmarkView from './components/BenchmarkView';
 
 function App() {
   const [activeTab, setActiveTab] = useState('documents');
@@ -110,6 +112,7 @@ function App() {
     { id: 'summary', label: 'Resumir', icon: FileSpreadsheet, desc: 'Síntesis ejecutiva y puntos clave' },
     { id: 'translate', label: 'Traducir', icon: Languages, desc: 'Traducción local multilingüe' },
     { id: 'extract', label: 'Extraer Datos', icon: Search, desc: 'Entidades, fechas y métricas JSON' },
+    { id: 'benchmarks', label: 'Arena Benchmarks', icon: Trophy, desc: 'Ranking y métricas de modelos locales' },
     { id: 'settings', label: 'Sistema', icon: SettingsIcon, desc: 'Estado de hardware y parámetros' },
   ];
 
@@ -409,6 +412,7 @@ function App() {
           {activeTab === 'summary' && <SummaryTool />}
           {activeTab === 'translate' && <TranslateTool />}
           {activeTab === 'extract' && <ExtractTool />}
+          {activeTab === 'benchmarks' && <BenchmarkView />}
           {activeTab === 'settings' && <Settings />}
         </div>
       </main>

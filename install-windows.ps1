@@ -310,5 +310,6 @@ Write-Host "  * ai                 - Asistente de codigo y chat" -ForegroundColo
 Write-Host "  * ai models          - Seleccionar o descargar modelos GGUF" -ForegroundColor Cyan
 Write-Host "  * ai serve           - Iniciar servidor llama.cpp con aceleracion $HwDisplayName" -ForegroundColor Cyan
 Write-Host "  * ai menu            - Dashboard interactivo TUI" -ForegroundColor Cyan
+Write-Host "  * ai claude          - Conectar agente Claude Code al servidor local" -ForegroundColor Cyan
 Write-Host "  * ai help            - Manual interactivo y ayuda" -ForegroundColor Cyan
 Write-Host ""

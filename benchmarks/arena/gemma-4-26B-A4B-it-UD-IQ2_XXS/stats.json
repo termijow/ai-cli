@@ -1,0 +1,43 @@
+{
+  "id": "gemma-4-26B-A4B-it-UD-IQ2_XXS",
+  "model": "gemma-4-26B-A4B-it-UD-IQ2_XXS",
+  "score": 88,
+  "speed_tps": 0.0,
+  "tokens": 0,
+  "time_sec": 0.0,
+  "iterations": 1,
+  "has_preview": true,
+  "file_size_kb": 17.7,
+  "user_rank": "Decepcionante",
+  "user_rating": "3/10",
+  "user_review": "Le tenía más fe, pero nada que ver con Qwen 3.6. Ni siquiera es jugable.",
+  "playable": false,
+  "passed_checks": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Estructura de Game Loop con requestAnimationFrame (+3)",
+    "AudioContext y osciladores presentes (+10)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ],
+  "failed_checks": [
+    "BUG CRÍTICO DE BUCLE CONGELADO: Estás comparando delta time sin acumularlo entre frames (ej: 'lastTime = timestamp' en cada frame). En 60Hz delta es ~16ms, por lo que nunca alcanza el umbral de tick y la serpiente queda inmóvil. Solución: usa un acumulador de tiempo (accumulator += deltaTime; if (accumulator >= tickMs) { update(); accumulator = 0; }).",
+    "Audio bloqueado por política de autoplay: llama a audioCtx.resume() dentro del listener de click o inicio del juego para que suene en navegadores modernos."
+  ],
+  "details": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Estructura de Game Loop con requestAnimationFrame (+3)",
+    "AudioContext y osciladores presentes (+10)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)",
+    "PENDIENTE: BUG CRÍTICO DE BUCLE CONGELADO: Estás comparando delta time sin acumularlo entre frames (ej: 'lastTime = timestamp' en cada frame). En 60Hz delta es ~16ms, por lo que nunca alcanza el umbral de tick y la serpiente queda inmóvil. Solución: usa un acumulador de tiempo (accumulator += deltaTime; if (accumulator >= tickMs) { update(); accumulator = 0; }).",
+    "PENDIENTE: Audio bloqueado por política de autoplay: llama a audioCtx.resume() dentro del listener de click o inicio del juego para que suene en navegadores modernos."
+  ]
+}

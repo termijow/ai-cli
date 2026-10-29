@@ -5,8 +5,14 @@
 
 # Localizar directorio raíz de forma portable
 _PRESETS_SOURCE="${BASH_SOURCE[0]:-$0}"
-_LIB_DIR="$(cd -P "$(dirname "$_PRESETS_SOURCE")" >/dev/null 2>&1 && pwd -P)"
+_CLEAN_PRESETS="${_PRESETS_SOURCE//\\//}"
+_LIB_DIR="${_CLEAN_PRESETS%/*}"
+[[ "$_LIB_DIR" == "$_CLEAN_PRESETS" ]] && _LIB_DIR="."
+_LIB_DIR="$(cd -P "$_LIB_DIR" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$_LIB_DIR/.." >/dev/null 2>&1 && pwd -P)"
+if [[ -z "$PROJECT_ROOT" || "$PROJECT_ROOT" == "//" || "$PROJECT_ROOT" == "/" ]] && [[ -n "$AI_CLI_ROOT" ]]; then
+    PROJECT_ROOT="$AI_CLI_ROOT"
+fi
 PRESETS_DIR="$PROJECT_ROOT/presets"
 
 mkdir -p "$PRESETS_DIR"
@@ -96,6 +102,13 @@ load_preset_vars() {
     PRESET_TEMPERATURE="0.2"
     PRESET_MTP="off"
     PRESET_MTP_DRAFT_MAX="2"
+    PRESET_SPEC_TYPE="none"
+    PRESET_MODEL_DRAFT=""
+    PRESET_SPEC_DRAFT_N_MAX="3"
+    PRESET_FIT="on"
+    PRESET_MMPROJ=""
+    PRESET_TOP_P=""
+    PRESET_TOP_K=""
 
     if [[ -f "$preset_file" ]]; then
         # Sourced en subshell para no colisionar con el entorno principal si no se desea,
@@ -121,10 +134,25 @@ load_preset_vars() {
                 AI_CACHE_TYPE_K)       PRESET_CACHE_TYPE_K="$val" ;;
                 AI_CACHE_TYPE_V)       PRESET_CACHE_TYPE_V="$val" ;;
                 AI_THREADS)            PRESET_THREADS="$val" ;;
-                AI_MAX_TOKENS)          PRESET_MAX_TOKENS="$val" ;;
+                AI_MAX_TOKENS)         PRESET_MAX_TOKENS="$val" ;;
                 AI_TEMPERATURE)        PRESET_TEMPERATURE="$val" ;;
-                AI_MTP)                PRESET_MTP="$val" ;;
-                AI_MTP_DRAFT_MAX)      PRESET_MTP_DRAFT_MAX="$val" ;;
+                AI_MTP)
+                    PRESET_MTP="$val"
+                    if [[ "$val" == "on" && ( -z "$PRESET_SPEC_TYPE" || "$PRESET_SPEC_TYPE" == "none" ) ]]; then
+                        PRESET_SPEC_TYPE="draft-mtp"
+                    fi
+                    ;;
+                AI_MTP_DRAFT_MAX)
+                    PRESET_MTP_DRAFT_MAX="$val"
+                    PRESET_SPEC_DRAFT_N_MAX="$val"
+                    ;;
+                AI_SPEC_TYPE)          PRESET_SPEC_TYPE="$val" ;;
+                AI_MODEL_DRAFT)        PRESET_MODEL_DRAFT="$val" ;;
+                AI_SPEC_DRAFT_N_MAX)   PRESET_SPEC_DRAFT_N_MAX="$val" ;;
+                AI_FIT)                PRESET_FIT="$val" ;;
+                AI_MMPROJ)             PRESET_MMPROJ="$val" ;;
+                AI_TOP_P)              PRESET_TOP_P="$val" ;;
+                AI_TOP_K)              PRESET_TOP_K="$val" ;;
                 AI_ESTIMATED_TOKS)     PRESET_ESTIMATED_TOKS="$val" ;;
                 MODEL_REPO)            PRESET_MODEL_REPO="$val" ;;
             esac
@@ -150,6 +178,13 @@ save_model_preset() {
     local max_tokens="${14:-${AI_MAX_TOKENS:-8192}}"
     local temp="${15:-${AI_TEMPERATURE:-0.2}}"
     local mtp="${16:-${AI_MTP:-off}}"
+    local spec_type="${17:-${AI_SPEC_TYPE:-none}}"
+    local model_draft="${18:-${AI_MODEL_DRAFT:-}}"
+    local spec_draft_n_max="${19:-${AI_SPEC_DRAFT_N_MAX:-3}}"
+    local fit="${20:-${AI_FIT:-on}}"
+    local mmproj="${21:-${AI_MMPROJ:-}}"
+    local top_p="${22:-${AI_TOP_P:-}}"
+    local top_k="${23:-${AI_TOP_K:-}}"
 
     local stem=$(get_model_stem "$model_file")
     local target_file="$PRESETS_DIR/$stem.conf"
@@ -186,6 +221,15 @@ AI_THINKING_LEVEL=$thinking_level
 AI_MAX_TOKENS=$max_tokens
 AI_TEMPERATURE=$temp
 AI_MTP=$mtp
+
+# Speculative Decoding / MTP / Visión
+AI_SPEC_TYPE="$spec_type"
+AI_MODEL_DRAFT="$model_draft"
+AI_SPEC_DRAFT_N_MAX=$spec_draft_n_max
+AI_FIT="$fit"
+AI_MMPROJ="$mmproj"
+AI_TOP_P="$top_p"
+AI_TOP_K="$top_k"
 EOF
 
     echo "$target_file"
@@ -280,6 +324,62 @@ apply_preset_to_env_file() {
             sed -i "s|^AI_MTP_DRAFT_MAX=.*|AI_MTP_DRAFT_MAX=$PRESET_MTP_DRAFT_MAX|" "$env_file"
         else
             echo "AI_MTP_DRAFT_MAX=$PRESET_MTP_DRAFT_MAX" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_SPEC_TYPE" ]]; then
+        if grep -q "^AI_SPEC_TYPE=" "$env_file"; then
+            sed -i "s|^AI_SPEC_TYPE=.*|AI_SPEC_TYPE=$PRESET_SPEC_TYPE|" "$env_file"
+        else
+            echo "AI_SPEC_TYPE=$PRESET_SPEC_TYPE" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_MODEL_DRAFT" ]]; then
+        if grep -q "^AI_MODEL_DRAFT=" "$env_file"; then
+            sed -i "s|^AI_MODEL_DRAFT=.*|AI_MODEL_DRAFT=$PRESET_MODEL_DRAFT|" "$env_file"
+        else
+            echo "AI_MODEL_DRAFT=$PRESET_MODEL_DRAFT" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_SPEC_DRAFT_N_MAX" ]]; then
+        if grep -q "^AI_SPEC_DRAFT_N_MAX=" "$env_file"; then
+            sed -i "s|^AI_SPEC_DRAFT_N_MAX=.*|AI_SPEC_DRAFT_N_MAX=$PRESET_SPEC_DRAFT_N_MAX|" "$env_file"
+        else
+            echo "AI_SPEC_DRAFT_N_MAX=$PRESET_SPEC_DRAFT_N_MAX" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_FIT" ]]; then
+        if grep -q "^AI_FIT=" "$env_file"; then
+            sed -i "s|^AI_FIT=.*|AI_FIT=$PRESET_FIT|" "$env_file"
+        else
+            echo "AI_FIT=$PRESET_FIT" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_MMPROJ" ]]; then
+        if grep -q "^AI_MMPROJ=" "$env_file"; then
+            sed -i "s|^AI_MMPROJ=.*|AI_MMPROJ=$PRESET_MMPROJ|" "$env_file"
+        else
+            echo "AI_MMPROJ=$PRESET_MMPROJ" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_TOP_P" ]]; then
+        if grep -q "^AI_TOP_P=" "$env_file"; then
+            sed -i "s|^AI_TOP_P=.*|AI_TOP_P=$PRESET_TOP_P|" "$env_file"
+        else
+            echo "AI_TOP_P=$PRESET_TOP_P" >> "$env_file"
+        fi
+    fi
+
+    if [[ -n "$PRESET_TOP_K" ]]; then
+        if grep -q "^AI_TOP_K=" "$env_file"; then
+            sed -i "s|^AI_TOP_K=.*|AI_TOP_K=$PRESET_TOP_K|" "$env_file"
+        else
+            echo "AI_TOP_K=$PRESET_TOP_K" >> "$env_file"
         fi
     fi
 

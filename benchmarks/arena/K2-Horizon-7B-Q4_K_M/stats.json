@@ -1,0 +1,11 @@
+{
+  "model": "K2-Horizon-7B-Q4_K_M.gguf",
+  "size_gb": 5.21,
+  "tokens": 82046,
+  "time_s": 2863.6,
+  "speed": 17.93,
+  "score": 85,
+  "iterations": 4,
+  "out_file": "C:\\Users\\USUARIO\\Documents\\ai-cli\\benchmarks\\arena\\K2-Horizon-7B-Q4_K_M\\snake.html",
+  "timestamp": "2026-10-25 22:39:55"
+}

@@ -1,0 +1,343 @@
+<!DOCTYPE html>`.
+Then `<head>`.
+Then `<style>`.
+Then `<body>`.
+Then `<script>`.
+Inside `<script>`:
+```javascript
+    // ============================================
+    // CONFIGURACIÓN DEL JUEGO
+    // ============================================
+    const CANVAS_WIDTH = 600;
+    // ...
+    const TICK_RATE = 12;
+    // ...
+
+    // ============================================
+    // FUNCIONES GLOBALES
+    // ============================================
+
+    // Crear la serpiente inicial
+    function createSnake() {
+      // ...
+    }
+
+    // Reiniciar el juego (global)
+    function resetGame() {
+      // ...
+      snake = createSnake();
+      createFood();
+      // ...
+    }
+    // ...
+```
+It is definitely there.
+
+However, sometimes in these iterative tasks, if I make a mistake in the *structure* (e.g., putting a function inside another function incorrectly), it might cause issues. But here `createFood` is global.
+
+Wait! I see a potential issue in the *previous* turn's code block that I might have missed in the text generation.
+In the previous turn, I wrote:
+```javascript
+    // ============================================
+    // FUNCIONES GLOBALES
+    // ============================================
+
+    // Crear la serpiente inicial
+    function createSnake() {
+      // ...
+    }
+
+    // Reiniciar el juego (global)
+    function resetGame() {
+      // ...
+      snake = createSnake();
+      createFood();
+      // ...
+    }
+    // ...
+```
+This looks correct.
+
+Is it possible that the error is `createSnake`? No, the error is `createFood`.
+
+Let's assume the error is real and I need to fix it. The most robust way to fix "ReferenceError: createFood is not defined" is to ensure the function is defined before any call to it.
+I will place `createFood` function definition at the very top, alongside `CONST` variables.
+
+Also, I need to make sure `resetGame` and `init` are defined after `createFood`.
+
+One detail: `createFood` needs to access `food` and `COLS`, `ROWS`, `GRID_SIZE`.
+In the previous code, `food` is a global variable initialized in `init`.
+`COLS`, `ROWS`, `GRID_SIZE` are constants.
+So `createFood` should be defined after `init`? No, it can be defined before `init` as long as it's in the global scope. It doesn't need to be called until `init` runs.
+
+So the plan:
+1. Define constants.
+2. Define `createFood` function (global).
+3. Define `createSnake` function (global).
+4. Define `resetGame` function (global).
+5. Define `init` function (global).
+6. Define `gameOver` function (global).
+7. Define `pauseGame`, `hideGameOver`, `updateScoreDisplay`.
+8. Define render, drawGrid, drawSnake, drawFood, drawParticles, spawnParticles, moveSnake.
+9. Define `gameLoop`.
+10. Define `init` (calls createSnake, createFood).
+11. Define `handleKeyDown`.
+12. Define `setupTouchControls`.
+13. Event listeners.
+
+This structure is sound.
+
+Let's write the code.
+
+One specific check: `createFood` implementation.
+```javascript
+    function createFood() {
+      const x = food.x * GRID_SIZE;
+      const y = food.y * GRID_SIZE;
+      // ... logic to find random spot ...
+      food = { x, y };
+    }
+```
+This is fine.
+
+I will ensure no syntax errors.
+
+One final check on the "D-Pad virtual" requirement.
+The prompt asks for "Si faltaban controles táctiles, implementa el D-Pad virtual en pantalla con eventos touchstart/touchend."
+In my previous code, I implemented `setupTouchControls` which listens to `touchstart` and `touchend` and calls `moveSnake`. This satisfies the requirement.
+
+The Web Audio API requirement:
+"Si faltaba Web Audio API, inicializa AudioContext con osciladores y gain nodes para comer manzana y morir."
+I used `createOscillator` and `createGain` in `playSound`. This satisfies the requirement.
+
+The Canvas requirement:
+"Gráficos en Canvas 2D con estética retro cyberpunk o arcade oscura (colores neón, rejilla tenue, serpiente con gradiente/brillo)."
+I have `COLOR_BG`, `COLOR_SERPENTINE`, `COLOR_FOOD`, `COLOR_HIGHSCORE`, `COLOR_PARTICLE`. The colors are neon-ish. The grid is drawn. The snake has a gradient.
+
+The HTML structure:
+"Entrega el archivo HTML autocontenido completo y corregido dentro de un bloque ```html ... ```."
+I will output only the HTML block.
+
+Let's assemble the final code.
+
+```html
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snake Arcade Retro</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+    }
+    #game-container {
+      position: relative;
+      border: 2px solid #00ffcc;
+      box-shadow: 0 0 30px rgba(0, 255, 204, 0.3);
+    }
+    canvas {
+      display: block;
+      background: #0a0a0a;
+    }
+    #ui-overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #00ffcc;
+      font-size: 14px;
+      text-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
+      pointer-events: none;
+    }
+    #score-display {
+      position: absolute;
+      top: 80px;
+      right: 20px;
+      color: #ffcc00;
+      font-size: 24px;
+      font-weight: bold;
+      text-shadow: 0 0 10px rgba(255, 204, 0, 0.5);
+    }
+    #high-score {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      color: #00ffcc;
+      font-size: 14px;
+    }
+    #game-over-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    #game-over-screen.active {
+      opacity: 1;
+    }
+    .btn {
+      background: #00ffcc;
+      color: #000;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-family: 'Courier New', monospace;
+      cursor: pointer;
+      transition: transform 0.2s;
+      border-radius: 4px;
+    }
+    .btn:hover { transform: scale(1.1); }
+    .btn:active { transform: scale(0.95); }
+    #pause-btn {
+      background: #ff4444;
+      color: #fff;
+      font-size: 14px;
+    }
+    #reset-btn {
+      background: #00ffcc;
+      color: #000;
+      font-size: 14px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas"></canvas>
+    <div id="ui-overlay">
+      <div>Puntuación: <span id="score-display">0</span></div>
+      <div>Récord: <span id="high-score">0</span></div>
+    </div>
+    <div id="game-over-screen" class="active">
+      <h1>GAME OVER</h1>
+      <p>Puntuación: <span id="final-score">0</span></p>
+      <button class="btn" id="reset-btn">Reiniciar</button>
+      <button class="btn" id="pause-btn">Pausa</button>
+    </div>
+  </div>
+
+  <script>
+    // ============================================
+    // CONFIGURACIÓN DEL JUEGO
+    // ============================================
+    const CANVAS_WIDTH = 600;
+    const CANVAS_HEIGHT = 600;
+    const GRID_SIZE = 20;
+    const COLS = CANVAS_WIDTH / GRID_SIZE;
+    const ROWS = CANVAS_HEIGHT / GRID_SIZE;
+
+    // Colores retro arcade
+    const COLOR_BG = '#0a0a0a';
+    const COLOR_SERPENTINE = '#00ffcc';
+    const COLOR_FOOD = '#ffcc00';
+    const COLOR_HIGHSCORE = '#ff00ff';
+    const COLOR_PARTICLE = '#ffffff';
+
+    // Velocidad: 12 ticks por segundo
+    const TICK_RATE = 12;
+    const TICK_INTERVAL = 1000 / TICK_RATE;
+
+    // ============================================
+    // FUNCIONES GLOBALES
+    // ============================================
+
+    // Crear la serpiente inicial (global)
+    function createSnake() {
+      const startX = Math.floor(COLS / 2);
+      const startY = Math.floor(ROWS / 2);
+      snake = [
+        { x: startX, y: startY },
+        { x: startX - 1, y: startY },
+        { x: startX - 2, y: startY }
+      ];
+    }
+
+    // Reiniciar el juego (global)
+    function resetGame() {
+      gameState = 'playing';
+      score = 0;
+      snake = createSnake();
+      createFood();
+      particles = [];
+      shakeX = 0;
+      shakeY = 0;
+      updateScoreDisplay();
+      hideGameOver();
+    }
+
+    // ============================================
+    // SISTEMA DE AUDIO (Web Audio API)
+    // ============================================
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx) {
+        audioCtx.resume(); // Resumir el context para permitir audio en navegadores modernos
+      }
+    }
+
+    // Sonidos sintetizados usando createOscillator y createGain
+    function playSound(frequency, type = 'sine', duration = 0.2, volume = 0.3) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+      gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    // ============================================
+    // LÓGICA DEL JUEGO
+    // ============================================
+    let gameState = 'playing'; // 'playing' | 'paused' | 'gameover'
+    let score = 0;
+    let highScore = parseInt(localStorage.getItem('snake_highscore') || '0');
+
+    let snake = [];
+    let food = null;
+    let particles = [];
+    let shakeX = 0;
+    let shakeY = 0;
+
+    function update() {
+      if (gameState !== 'playing') return;
+
+      // Mover la cola: cada segmento avanza un paso
+      const head = snake[0];
+      const newHead = {
+        x: head.x + (head.x % GRID_SIZE) === 0 ? -GRID_SIZE : head.x + 1,
+        y: head.y + (head.y % GRID_SIZE) === 0 ? -GRID_SIZE : head.y + 1
+      };
+
+      if (gameState === 'gameover') return;
+
+      // Verificar colisión con paredes
+      if (newHead.x < 0 || newHead.x >= COLS || newHead.y < 0 || newHead.y >= ROWS) {
+        gameOver();
+        return;
+      }
+
+      // Verificar colisión consigo misma (excepto la cabeza)
+      for (let i = 1; i < snake.length; i

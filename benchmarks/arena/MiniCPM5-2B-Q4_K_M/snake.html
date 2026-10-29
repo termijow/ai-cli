@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Arcade Retro</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background-color: #0d0d0d;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #1a1a1a;
+            border: 2px solid #00ff88;
+            padding: 20px;
+            text-align: center;
+            z-index: 100;
+        }
+        .restart-btn, .pause-btn {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: 1px solid #00ff88;
+            background-color: #00ff88;
+            color: #0d0d0d;
+        }
+        .restart-btn:hover, .pause-btn:hover {
+            background-color: #fff;
+        }
+        .high-score {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: #00ff88;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div class="game-over" id="gameOverScreen">
+        <h2>Game Over!</h2>
+        <button class="restart-btn" id="restartBtn">Restart</button>
+        <button class="pause-btn" id="pauseBtn">Pause</button>
+        <div class="high-score" id="highScore">High Score: 0</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const restartBtn = document.getElementById('restartBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const highScoreEl = document.getElementById('highScore');
+
+        let snake = [];
+        let apple = null;
+        let score = 0;
+        let highScore = localStorage.getItem('snakeHighScore') || 0;
+        let gameRunning = true;
+        let gameLoopId = null;
+        let touchControls = false;
+
+        function drawGrid() {
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 20) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 20) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawSnake() {
+            ctx.fillStyle = '#00ff88';
+            ctx.beginPath();
+            let x = snake[0][0];
+            let y = snake[0][1];
+            ctx.moveTo(x, y);
+            for (let i = 1; i < snake.length; i++) {
+                x = snake[i][0];
+                y = snake[i][1];
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.fill();
+        }
+
+        function drawApple() {
+            let x = Math.floor(Math.random() * canvas.width) + 10;
+            let y = Math.floor(Math.random() * canvas.height) - 10;
+            apple = { x, y };
+            ctx.fillStyle = '#00ff88';
+            ctx.beginPath();
+            ctx.arc(x, y, 10, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawParticles() {
+            for (let i = 0; i < 20; i++) {
+                ctx.fillStyle = '#00ff88';
+                ctx.beginPath();
+                ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawHighScore() {
+            highScoreEl.textContent = 'High Score: ' + highScore;
+        }
+
+        function updateGame() {
+            if (!gameRunning) return;
+            if (apple !== null) {
+                let collision = false;
+                for (let segment of snake) {
+                    if (segment.x === apple.x && segment.y === apple.y) {
+                        collision = true;
+                        break;
+                    }
+                }
+                if (collision) {
+                    gameRunning = false;
+                    apple = null;
+                }
+            }
+            if (gameRunning) {
+                let lastX = snake[snake.length - 1][0];
+                let lastY = snake[snake.length - 1][1];
+                snake.push([lastX, lastY]);
+                if (snake.length > 100) snake.shift(0);
+                if (apple !== null) {
+                    let collision = false;
+                    for (let segment of snake) {
+                        if (segment.x === apple.x && segment.y === apple.y) {
+                            collision = true;
+                            break;
+                        }
+                    }
+                    if (collision) {
+                        apple = null;
+                    }
+                }
+                score++;
+                if (score > highScore) {
+                    highScore = score;
+                    localStorage.setItem('snakeHighScore', highScore);
+                }
+            }
+        }
+
+        function checkCollision() {
+            let collision = false;
+            for (let segment of snake) {
+                if (segment.x === apple.x && segment.y === apple.y) {
+                    collision = true;
+                    break;
+                }
+            }
+            return collision;
+        }
+
+        function generateApple() {
+            let x = Math.floor(Math.random() * canvas.width) + 10;
+            let y = Math.floor(Math.random() * canvas.height) - 10;
+            while (x === apple.x && y === apple.y) {
+                x = Math.floor(Math.random() * canvas.width) + 10;
+                y = Math.floor(Math.random() * canvas.height) - 10;
+            }
+            apple = { x, y };
+        }
+
+        function moveSnake() {
+            let x = snake[0][0];
+            let y = snake[0][1];
+            snake[0] = [x, y];
+            for (let i = 1; i < snake.length; i++) {
+                snake[i] = snake[i - 1];
+            }
+        }
+
+        function moveApple() {
+            if (apple !== null) {
+                let x = Math.floor(Math.random() * canvas.width) + 10;
+                let y = Math.floor(Math.random() * canvas.height) - 10;
+                while (x === apple.x && y === apple.y) {
+                    x = Math.floor(Math.random() * canvas.width) + 10;
+                    y = Math.floor(Math.random() * canvas.height) - 10;
+                }
+                apple = { x, y };
+            }
+        }
+
+        function touchControls() {
+            touchControls = true;
+            document.addEventListener('touchstart', (e) => {
+                let touch = e.touches[0];
+                if (touch.x < 100 && touch.x > 0 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 100 && touch.y < 200) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 200 && touch.y < 300) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+            }, { passive: true });
+            document.addEventListener('touchmove', (e) => {
+                let touch = e.touches[0];
+                if (touch.x < 100 && touch.x > 0 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 100 && touch.y < 200) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 200 && touch.y < 300) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+            }, { passive: true });
+            document.addEventListener('touchend', () => {
+                touchControls = false;
+            });
+        }
+
+        function touchControlsResponsive() {
+            touchControls = true;
+            document.addEventListener('touchstart', (e) => {
+                let touch = e.touches[0];
+                if (touch.x < 100 && touch.x > 0 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 100 && touch.y < 200) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 200 && touch.y < 300) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+            }, { passive: true });
+            document.addEventListener('touchmove', (e) => {
+                let touch = e.touches[0];
+                if (touch.x < 100 && touch.x > 0 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 100 && touch.y < 200) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 200 && touch.y < 300) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+            }, { passive: true });
+            document.addEventListener('touchend', () => {
+                touchControls = false;
+            });
+        }
+
+        function touchControls() {
+            touchControls = true;
+            document.addEventListener('touchstart', (e) => {
+                let touch = e.touches[0];
+                if (touch.x < 100 && touch.x > 0 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 100 && touch.y < 200) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 200 && touch.y < 300) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+            }, { passive: true });
+            document.addEventListener('touchmove', (e) => {
+                let touch = e.touches[0];
+                if (touch.x < 100 && touch.x > 0 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y < 100 && touch.y > 0) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 100 && touch.y < 200) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+                if (touch.x > 300 && touch.x < 400 && touch.y > 200 && touch.y < 300) {
+                    snake[0][0] = touch.x;
+                    snake[0][1] = touch.y;
+                }
+            }, { passive: true });
+            document.addEventListener('touchend', () => {
+                touchControls = false;
+            });
+        }
+
+        function keyboardControls() {
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp') {
+                    snake[0][1] -= 10;
+                    if (snake[0][1] < 0) snake[0][1] = 0;
+                }
+                if (e.key === 'ArrowDown') {
+                    snake[0][1] += 10;
+                    if (snake[0][1] > canvas.height - 10) snake[0][1] = canvas.height - 10;
+                }
+                if (e.key === 'ArrowLeft') {
+                    snake[0][0] -= 10;
+                    if (snake[0][0] < 10) snake[0][0] = 10;
+                }
+                if (e.key === 'ArrowRight') {
+                    snake[0][0] += 10;
+                    if (snake[0][0] > canvas.width - 10) snake[0][0] = canvas.width - 10;
+                }
+                if (e.key === 'w') {
+                    snake[0][1] -= 10;
+                    if (snake[0][1] < 0) snake[0][1] = 0;
+                }
+                if (e.key === 's') {
+                    snake[0][1] += 10;
+                    if (snake[0][1] > canvas.height - 10) snake[0][1] = canvas.height - 10;
+                }
+                if (e.key === 'a') {
+                    snake[0][0] -= 10;
+                    if (snake[0][0] < 10) snake[0][0] = 10;
+                }
+                if (e.key === 'd') {
+                    snake[0][0] += 10;
+                    if (snake[0][0] > canvas.width - 10) snake[0][0] = canvas.width - 10;
+                }
+            });
+        }
+
+        function audio() {
+            const ctx = new (window.AudioContext || {})();
+            const sound = ctx.createBuffer(1, 220, ctx.sampleRate);
+            const osc = ctx.createOscillator();
+            osc.buffer = sound;
+            osc.connect(ctx.destination);
+            return sound;
+        }
+
+        function playSound() {
+            const ctx = new (window.AudioContext || {})();
+            const sound = ctx.createBuffer(1, 220, ctx.sampleRate);
+            const osc = ctx.createOscillator();
+            osc.buffer = sound;
+            osc.connect(ctx.destination);
+            ctx.resume();
+        }
+
+        function shakeScreen() {
+            let x = 0;
+            let y = 0;
+            const duration = 100;
+            const interval = setInterval(() => {
+                x += Math.random() * 2;
+                y += Math.random() * 2;
+                if (Math.sqrt(x * x + y * y) > 50) {
+                    clearInterval(interval);
+                }
+            }, 16);
+            setTimeout(() => clearInterval(interval), duration);
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+            updateGame();
+            drawGrid();
+            drawSnake();
+            drawApple();
+            drawParticles();
+            drawHighScore();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function restartGame() {
+            gameRunning = true;
+            score = 0;
+            highScore = localStorage.getItem('snakeHighScore') || 0;
+            apple = null;
+            snake = [[100, 100]];
+            gameOverScreen.style.display = 'none';
+            restartBtn.textContent = 'Restart';
+            pauseBtn.textContent = 'Pause';
+        }
+
+        function pauseGame() {
+            gameRunning = false;
+            gameOverScreen.style.display = 'none';
+            restartBtn.textContent = 'Restart';
+            pauseBtn.textContent = 'Resume';
+        }
+
+        function resumeGame() {
+            gameRunning = true;
+            gameOverScreen.style.display = 'none';
+            restartBtn.textContent = 'Restart';
+            pauseBtn.textContent = 'Pause';
+        }
+
+        function startGame() {
+            gameRunning = true;
+            score = 0;
+            highScore = localStorage.getItem('snakeHighScore') || 0;
+            apple = null;
+            snake = [[100, 100]];
+            gameLoop();
+        }
+
+        function init() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            window.addEventListener('resize', () => {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            });
+            keyboardControls();
+            touchControls();
+            startGame();
+        }
+
+        window.addEventListener('load', init);
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>

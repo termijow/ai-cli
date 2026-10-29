@@ -1,0 +1,41 @@
+{
+  "id": "Qwen3.6-35B-A3B-UD-IQ2_XXS",
+  "model": "Qwen3.6-35B-A3B-UD-IQ2_XXS",
+  "score": 95,
+  "speed_tps": 0.0,
+  "tokens": 0,
+  "time_sec": 0.0,
+  "iterations": 2,
+  "has_preview": true,
+  "file_size_kb": 11.8,
+  "user_rank": "Top 1",
+  "user_rating": "10/10",
+  "user_review": "Funciona perfectamente, se ve hermoso (estética cyberpunk neón impecable), fluido y responsivo.",
+  "playable": true,
+  "passed_checks": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Bucle de juego (Game Loop) continuo y funcional (+10)",
+    "AudioContext y osciladores presentes (+10)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ],
+  "failed_checks": [
+    "Audio bloqueado por política de autoplay: llama a audioCtx.resume() dentro del listener de click o inicio del juego para que suene en navegadores modernos."
+  ],
+  "details": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Bucle de juego (Game Loop) continuo y funcional (+10)",
+    "AudioContext y osciladores presentes (+10)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)",
+    "PENDIENTE: Audio bloqueado por política de autoplay: llama a audioCtx.resume() dentro del listener de click o inicio del juego para que suene en navegadores modernos."
+  ]
+}

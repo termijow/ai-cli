@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Viborita - Snake Cyberpunk</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #050510;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  #gameCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #050510;
+    cursor: pointer;
+  }
+  #gameCanvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+  /* Retro grid overlay */
+  .grid-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background-image: linear-gradient(rgba(0, 255, 0, 0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+    transform: rotate(0deg);
+    animation: gridPulse 2s infinite linear;
+  }
+  @keyframes gridPulse {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  /* HUD */
+  #hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    color: #00ffcc;
+    text-shadow: 0 0 5px #00ffcc;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #scoreLabel, #scoreValue, #highScoreLabel, #highScoreValue, #speedLabel, #speedValue {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 5px 10px;
+    border: 1px solid #00ffcc;
+    border-radius: 3px;
+  }
+  /* Game Over overlay */
+  #gameOver {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 20;
+    pointer-events: auto;
+  }
+  #gameOver .gameOverText {
+    font-size: 48px;
+    color: #ff00cc;
+    text-shadow: 0 0 10px #ff00cc;
+    margin-bottom: 20px;
+  }
+  #gameOver .scoreInfo {
+    font-size: 24px;
+    color: #00ffcc;
+    margin-bottom: 40px;
+  }
+  #gameOver .buttons {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+  }
+  #gameOver button {
+    padding: 15px 30px;
+    font-size: 20px;
+    color: #00ffcc;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid #00ffcc;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #gameOver button:hover {
+    background: #00ffcc;
+    color: #050510;
+    box-shadow: 0 0 15px #00ffcc;
+  }
+  /* Pause overlay */
+  #pauseOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    z-index: 15;
+    pointer-events: auto;
+  }
+  #pauseOverlay .pauseText {
+    font-size: 48px;
+    color: #00ffcc;
+    text-shadow: 0 0 10px #00ffcc;
+    margin-bottom: 20px;
+  }
+  #pauseOverlay .pauseButtons {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+  }
+  #pauseOverlay button {
+    padding: 15px 30px;
+    font-size: 20px;
+    color: #00ffcc;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid #00ffcc;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #pauseOverlay button:hover {
+    background: #00ffcc;
+    color: #050510;
+    box-shadow: 0 0 15px #00ffcc;
+  }
+  /* Touch D-Pad */
+  #touchPad {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    width: 150px;
+    height: 150px;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid #00ffcc;
+    border-radius: 10px;
+    pointer-events: auto;
+    z-index: 5;
+  }
+  #touchPad .pad {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px solid #00ffcc;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  #touchPad .pad:hover, #touchPad .pad:active {
+    background: #00ffcc;
+    transform: scale(1.1);
+    box-shadow: 0 0 15px #00ffcc;
+  }
+  #touchPad .padUp { transform: translateY(-50%); }
+  #touchPad .padDown { transform: translateY(50%); }
+  #touchPad .padLeft { transform: translateX(-50%); }
+  #touchPad .padRight { transform: translateX(50%); }
+  /* Mobile only */
+  @media (max-width: 600px) {
+    #touchPad {
+      display: flex;
+    }
+  }
+</style>
+</head>
+<body>
+  <div id="gameCanvas">
+    <div class="grid-overlay"></div>
+    <canvas id="gameCanvasCanvas" width="480" height="360"></canvas>
+    <div id="hud">
+      <div id="scoreLabel">SCORE</div>
+      <div id="scoreValue">0</div>
+      <div id="highScoreLabel">HIGH</div>
+      <div id="highScoreValue">0</div>
+      <div id="speedLabel">SPEED</div>
+      <div id="speedValue">0</div>
+    </div>
+    <div id="gameOver">
+      <div class="gameOverText">GAME OVER</div>
+      <div class="scoreInfo">Score: <span id="finalScore">0</span> | High: <span id="finalHighScore">0</span></div>
+      <div class="buttons">
+        <button id="restartBtn">REINICIAR</button>
+      </div>
+    </div>
+    <div id="pauseOverlay">
+      <div class="pauseText">PAUSED</div>
+      <div class="pauseButtons">
+        <button id="pauseBtn">CONTINUAR</button>
+        <button id="resumeBtn">REINICIAR</button>
+      </div>
+    </div>
+    <div id="touchPad">
+      <div class="pad padUp" data-dir="up">▲</div>
+      <div class="pad padDown" data-dir="down">▼</div>
+      <div class="pad padLeft" data-dir="left">◀</div>
+      <div class="pad padRight" data-dir="right">▶</div>
+    </div>
+  </div>
+  <script>
+    // ===== CONFIGURACIÓN =====
+    const CONFIG = {
+      gridSize: 20,
+      gridWidth: 24,
+      gridHeight: 18,
+      initialSpeed: 0.09, // segundos por tick (~11 ticks/seg)
+      speedIncrease: 0.0005, // por cada punto de puntuación
+      minSpeed: 0.03, // ~33 ticks/seg
+      maxSpeed: 0.02, // ~50 ticks/seg
+      cellSize: 20, // px por celda
+      snakeColor: '#00ffcc',
+      snakeHeadColor: '#00ffcc',
+      appleColor: '#ff00cc',
+      gridColor: '#050510',
+      gridOverlayColor: '#00ffcc',
+      particleColor: '#ff00cc',
+      particleSpeed: 60, // px/seg
+    };
+    
+    // ===== VARIABLES GLOBALES =====
+    let lastRenderTime = 0; // <-- DEFINIDO AQUÍ, en el scope global
+    let gameLoopId = null;
+    let gameState = 'idle'; // idle, playing, paused, gameOver
+    let snake = null;
+    let apple = null;
+    let score = 0;
+    let highScore = 0;
+    let speed = CONFIG.initialSpeed;
+    let shakeIntensity = 0;
+    let shakeDuration = 0;
+    let particles = [];
+    let audioContext = null;
+    let audioReady = false;
+    let audioNodes = [];
+    let shakeTimer = 0;
+    let touchPadActive = false;
+    
+    // ===== ELEMENTOS DOM =====
+    const canvas = document.getElementById('gameCanvasCanvas');
+    const ctx = canvas.getContext('2d');
+    const hudScoreValue = document.getElementById('scoreValue');
+    const hudHighScoreValue = document.getElementById('highScoreValue');
+    const hudSpeedValue = document.getElementById('speedValue');
+    const gameOverDiv = document.getElementById('gameOver');
+    const finalScoreSpan = document.getElementById('finalScore');
+    const finalHighScoreSpan = document.getElementById('finalHighScore');
+    const restartBtn = document.getElementById('restartBtn');
+    const pauseOverlay = document.getElementById('pauseOverlay');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const touchPad = document.getElementById('touchPad');
+    
+    // ===== AUDIO =====
+    function initAudio() {
+      if (audioContext) return;
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioReady = true;
+        audioContext.onstatechange = function() {
+          if (audioContext.state === 'running') {
+            audioReady = true;
+            if (!gameState || gameState === 'idle') {
+              startGame();
+            }
+          }
+        };
+      } catch (e) {
+        audioReady = false;
+      }
+    }
+    
+    function playSound(type) {
+      if (!audioContext || !audioReady) return;
+      const node = audioNodes[type];
+      if (node) {
+        node.currentTime = 0;
+        node.play();
+      }
+    }
+    
+    function createAudioNode(type) {
+      if (!audioContext || !audioReady) return;
+      const node = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const gainNode = audioContext.createGain();
+      audioNodes[type] = node;
+      node.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      node.start();
+      return node;
+    }
+    
+    function stopAudioNode(type) {
+      if (audioNodes[type]) {
+        audioNodes[type].stop();
+        audioNodes[type] = null;
+      }
+    }
+    
+    function playMoveSound() {
+      if (!audioContext || !audioReady) return;
+      const node = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      node.connect(gain);
+      gain.connect(audioContext.destination);
+      node.frequency.setValueAtTime(220, audioContext.currentTime);
+      node.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.0005, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0005, audioContext.currentTime + 0.1);
+      node.start();
+      setTimeout(function() { node.stop(); }, 100);
+    }
+    
+    function playAppleSound() {
+      if (!audioContext || !audioReady) return;
+      const node = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      node.connect(gain);
+      gain.connect(audioContext.destination);
+      node.frequency.setValueAtTime(880, audioContext.currentTime);
+      node.frequency.exponentialRampToValueAtTime(1320, audioContext.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.0005, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0005, audioContext.currentTime + 0.1);
+      node.start();
+      setTimeout(function() { node.stop(); }, 100);
+    }
+    
+    function playGameOverSound() {
+      if (!audioContext || !audioReady) return;
+      const node = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      node.connect(gain);
+      gain.connect(audioContext.destination);
+      node.frequency.setValueAtTime(440, audioContext.currentTime);
+      node.frequency.exponentialRampToValueAtTime(0.1, audioContext.currentTime + 0.5);
+      gain.gain.setValueAtTime(0.0005, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0005, audioContext.currentTime + 0.5);
+      node.start();
+      setTimeout(function() { node.stop(); }, 500);
+    }
+    
+    function playPauseSound() {
+      if (!audioContext || !audioReady) return;
+      const node = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      node.connect(gain);
+      gain.connect(audioContext.destination);
+      node.frequency.setValueAtTime(220, audioContext.currentTime);
+      node.frequency.exponentialRampToValueAtTime(440, audioContext.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.0005, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0005, audioContext.currentTime + 0.1);
+      node.start();
+      setTimeout(function() { node.stop(); }, 100);
+    }
+    
+    // ===== PARTÍCULAS =====
+    function createParticles(x, y, count) {
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: x + Math.random() * 20 - 10,
+          y: y + Math.random() * 20 - 10,
+          vx: (Math.random() - 0.5) * 200,
+          vy: (Math.random() - 0.5) * 200,
+          life: Math.random() * 0.5,
+          size: 2 + Math.random() * 3
+        });
+      }
+    }
+    
+    function updateParticles(dt) {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt;
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+    }
+    
+    // ===== SNAKE =====
+    function createSnake() {
+      snake = {
+        body: [],
+        head: { x: 3, y: 3 },
+        direction: { x: 0, y: 0 },
+        nextDirection: { x: 0, y: 0 },
+        alive: true
+      };
+      for (let i = 0; i < 3; i++) {
+        snake.body.push({ x: 3 + i, y: 3 });
+      }
+      snake.direction = { x: 0, y: 0 };
+      snake.nextDirection = { x: 0, y: 0 };
+    }
+    
+    function createApple() {
+      apple = {
+        x: Math.floor(Math.random() * CONFIG.gridWidth),
+        y: Math.floor(Math.random() * CONFIG.gridHeight),
+        eaten: false
+      };
+      // Asegurar que la manzana no esté sobre la serpiente
+      let valid = false;
+      while (!valid) {
+        apple.x = Math.floor(Math.random() * CONFIG.gridWidth);
+        apple.y = Math.floor(Math.random() * CONFIG.gridHeight);
+        valid = true;
+        for (let i = 0; i < snake.body.length; i++) {
+          if (apple.x === snake.body[i].x && apple.y === snake.body[i].y) {
+            valid = false;
+            break;
+          }
+        }
+      }
+    }
+    
+    // ===== JUGADOR =====
+    function startGame() {
+      if (gameState === 'playing' || gameState === 'paused') return;
+      gameState = 'playing';
+      shakeIntensity = 0;
+      shakeDuration = 0;
+      shakeTimer = 0;
+      createSnake();
+      createApple();
+      score = 0;
+      speed = CONFIG.initialSpeed;
+      updateHUD();
+      gameOverDiv.style.display = 'none';
+      pauseOverlay.style.display = 'none';
+      touchPad.style.display = 'none';
+      requestAnimationFrame(gameLoop);
+    }
+    
+    function updateHUD() {
+      hudScoreValue.textContent = score;
+      hudHighScoreValue.textContent = highScore;
+      hudSpeedValue.textContent = Math.round(1000 / speed);
+    }
+    
+    function saveHighScore() {
+      if (score > highScore) {
+        highScore = score;
+        updateHUD();
+        localStorage.setItem('snakeHighScore', highScore);
+      }
+    }
+    
+    function gameOver() {
+      if (gameState !== 'playing') return;
+      gameState = 'gameOver';
+      shakeIntensity = 0;
+      shakeDuration = 0;
+      shakeTimer = 0;
+      createParticles(canvas.width / 2, canvas.height / 2, 30);
+      playGameOverSound();
+      updateHUD();
+      finalScoreSpan.textContent = score;
+      finalHighScoreSpan.textContent = highScore;
+      gameOverDiv.style.display = 'flex';
+      restartBtn.style.display = 'inline-block';
+      restartBtn.textContent = 'REINICIAR';
+      restartBtn.onclick = function() {
+        restartGame();
+      };
+    }
+    
+    function restartGame() {
+      if (gameState === 'gameOver') {
+        gameState = 'idle';
+        gameOverDiv.style.display = 'none';
+        restartBtn.style.display = 'none';
+        startGame();
+      }
+    }
+    
+    function togglePause() {
+      if (gameState === 'playing') {
+        gameState = 'paused';
+        pauseOverlay.style.display = 'flex';
+        playPauseSound();
+      } else if (gameState === 'paused') {
+        gameState = 'playing';
+        pauseOverlay.style.display = 'none';
+        playPauseSound();
+      }
+    }
+    
+    // ===== TICK =====
+    function tick() {
+      if (gameState !== 'playing') return;
+      
+      // Aplicar dirección
+      const dir = snake.nextDirection;
+      snake.nextDirection = { x: 0, y: 0 };
+      
+      // Mover serpiente
+      const newHead = {
+        x: snake.head.x + dir.x,
+        y: snake.head.y + dir.y
+      };
+      
+      // Detectar colisión con paredes
+      if (newHead.x < 0 || newHead.x >= CONFIG.gridWidth || newHead.y < 0 || newHead.y >= CONFIG.gridHeight) {
+        gameOver();
+        return;
+      }
+      
+      // Detectar colisión con propia cola
+      let collision = false;
+      for (let i = 0; i < snake.body.length; i++) {
+        if (newHead.x === snake.body[i].x && newHead.y === snake.body[i].y) {
+          collision = true;
+          break;
+        }
+      }
+      
+      if (collision) {
+        gameOver();
+        return;
+      }
+      
+      // Detectar comer manzana
+      if (newHead.x === apple.x && newHead.y === apple.y) {
+        score += 1;
+        speed = Math.max(speed - CONFIG.speedIncrease, CONFIG.minSpeed);
+        createParticles(newHead.x * CONFIG.cellSize, newHead.y * CONFIG.cellSize, 20);
+        playAppleSound();
+        createApple();
+      }
+      
+      // Mover serpiente
+      snake.head = newHead;
+      snake.body.unshift(newHead);
+      
+      // Eliminar cola si no está comiendo
+      if (score === 0 || score === 1) {
+        // No eliminar nada en el inicio
+      } else {
+        // Eliminar cola (o más si está comiendo)
+        const bodyLength = snake.body.length;
+        if (bodyLength > 1) {
+          snake.body.pop();
+        }
+      }
+      
+      updateHUD();
+    }
+    
+    // ===== RENDER =====
+    function render() {
+      // Aplicar efecto de sacudida (shake)
+      let rotation = 0;
+      if (shakeTimer > 0) {
+        rotation = (shakeTimer / shakeDuration) * 360;
+        shakeTimer -= 0.016;
+      }
+      
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(rotation * Math.PI / 180);
+      ctx.scale(1, 1);
+      
+      // Fondo
+      ctx.fillStyle = CONFIG.gridColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Grilla
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x < canvas.width; x += CONFIG.cellSize) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+      }
+      for (let y = 0; y < canvas.height; y += CONFIG.cellSize) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+      }
+      ctx.stroke();
+      
+      // Partículas
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        ctx.fillStyle = CONFIG.particleColor;
+        ctx.globalAlpha = p.life;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Serpiente
+      ctx.fillStyle = CONFIG.snakeColor;
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 2;
+      for (let i = snake.body.length - 1; i >= 0; i--) {
+        const cell = snake.body[i];
+        ctx.fillRect(cell.x * CONFIG.cellSize, cell.y * CONFIG.cellSize, CONFIG.cellSize, CONFIG.cellSize);
+        ctx.strokeRect(cell.x * CONFIG.cellSize, cell.y * CONFIG.cellSize, CONFIG.cellSize, CONFIG.cellSize);
+      }
+      
+      // Manzana
+      ctx.fillStyle = CONFIG.appleColor;
+      ctx.strokeStyle = '#ff00cc';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(apple.x * CONFIG.cellSize + CONFIG.cellSize / 2, apple.y * CONFIG.cellSize + CONFIG.cellSize / 2, CONFIG.cellSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      
+      // Texto de puntuación
+      ctx.fillStyle = '#00ffcc';
+      ctx.font = '16px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText('SCORE: ' + score, 10, canvas.height - 10);
+      
+      ctx.restore();
+      
+      // Render HUD
+      if (gameState === 'playing' || gameState === 'paused') {
+        updateHUD();
+      }
+    }
+    
+    // ===== GAME LOOP =====
+    function gameLoop(timestamp) {
+      const deltaTime = timestamp - lastRenderTime;
+      lastRenderTime = timestamp;
+      
+      // Actualizar partículas
+      updateParticles(deltaTime);
+      
+      // Tick si el tiempo ha pasado
+      if (deltaTime >= speed) {
+        tick();
+      }
+      
+      // Render
+      render();
+      
+      // Continuar loop
+      gameLoopId = requestAnimationFrame(gameLoop);
+    }
+    
+    // ===== CONTROLES =====
+    function setDirection(dir) {
+      if (gameState === 'gameOver') return;
+      if (gameState === 'idle') return;
+      
+      // Evitar dirección inversa
+      if (snake.nextDirection.x === dir.x && snake.nextDirection.y === dir.y) return;
+      
+      snake.nextDirection = { x: dir.x, y: dir.y };
+    }
+    
+    function handleKey(e) {
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') setDirection({ x: 0, y: -1 });
+      else if (e.code === 'ArrowDown' || e.code === 'KeyS') setDirection({ x: 0, y: 1 });
+      else if (e.code === 'ArrowLeft' || e.code === 'KeyA') setDirection({ x: -1, y: 0 });
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') setDirection({ x: 1, y: 0 });
+    }
+    
+    function handleTouchStart(e) {
+      if (gameState === 'gameOver') return;
+      if (gameState === 'idle') return;
+      
+      const touch = e.touches[0];
+      const rect = touchPad.getBoundingClientRect();
+      const touchX = touch.clientX - rect.left;
+      const touchY = touch.clientY - rect.top;
+      
+      if (touchX < rect.width / 2) {
+        setDirection({ x: -1, y: 0 });
+      } else {
+        setDirection({ x: 1, y: 0 });
+      }
+      if (touchY < rect.height / 2) {
+        setDirection({ x: 0, y: -1 });
+      } else {
+        setDirection({ x: 0, y: 1 });
+      }
+      
+      // Evitar scroll en móvil
+      if (touchPad.style.display === 'flex') {
+        e.preventDefault();
+      }
+    }
+    
+    function handleTouchEnd(e) {
+      if (gameState === 'gameOver') return;
+      if (gameState === 'idle') return;
+      
+      const touch = e.touches[0];
+      const rect = touchPad.getBoundingClientRect();
+      const touchX = touch.clientX - rect.left;
+      const touchY = touch.clientY - rect.top;
+      
+      if (touchX < rect.width / 2) {
+        setDirection({ x: -1, y: 0 });
+      } else {
+        setDirection({ x: 1, y: 0 });
+      }
+      if (touchY < rect.height / 2) {
+        setDirection({ x: 0, y: -1 });
+      } else {
+        setDirection({ x: 0, y: 1 });
+      }
+      
+      if (touchPad.style.display === 'flex') {
+        e.preventDefault();
+      }
+    }
+    
+    // ===== INICIALIZACIÓN =====
+    function init() {
+      initAudio();
+      // Cargar high score
+      try {
+        highScore = parseInt(localStorage.getItem('snakeHighScore'), 10) || 0;
+        updateHUD();
+      } catch (e) {
+        highScore = 0;
+        updateHUD();
+      }
+      
+      // Eventos de teclado
+      window.addEventListener('keydown', handleKey);
+      
+      // Eventos de touch
+      window.addEventListener('touchstart', handleTouchStart, { passive: false });
+      window.addEventListener('touchend', handleTouchEnd, { passive: false });
+      
+      // Eventos de mouse (para desktop)
+      canvas.addEventListener('mousedown', function(e) {
+        if (gameState === 'gameOver' || gameState === 'idle') return;
+        const rect = touchPad.getBoundingClientRect();
+        const touchX = e.clientX - rect.left;
+        const touchY = e.clientY - rect.top;
+        if (touchX < rect.width / 2) setDirection({ x: -1, y: 0 });
+        else setDirection({ x: 1, y: 0 });
+        if (touchY < rect.height / 2) setDirection({ x: 0, y: -1 });
+        else setDirection({ x: 0, y: 1 });
+      });
+      
+      // Eventos de click en botones
+      pauseBtn.addEventListener('click', togglePause);
+      resumeBtn.addEventListener('click', restartGame);
+      
+      // Mostrar touch pad en móvil
+      if (window.matchMedia && window.matchMedia('(max-width: 600px)').matches) {
+        touchPad.style.display = 'flex';
+      }
+      
+      // Iniciar loop
+      lastRenderTime = performance.now();
+      gameLoop(performance.now());
+    }
+    
+    init();
+  </script>
+</body>
+</html>

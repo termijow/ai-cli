@@ -1,0 +1,38 @@
+{
+  "id": "gemma-4-E2B-it-Q8_0",
+  "model": "gemma-4-E2B-it-Q8_0",
+  "score": 100,
+  "speed_tps": 0.0,
+  "tokens": 0,
+  "time_sec": 0.0,
+  "iterations": 2,
+  "has_preview": true,
+  "file_size_kb": 16.6,
+  "user_rank": "Defectuoso",
+  "user_rating": "5/10",
+  "user_review": "Carga el juego (7/10 visual), pero la serpiente no se mueve. No jugable.",
+  "playable": false,
+  "passed_checks": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Bucle de juego (Game Loop) continuo y funcional (+10)",
+    "Web Audio API completa con sintetizador procedimental y .resume() en interacción (+15)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ],
+  "failed_checks": [],
+  "details": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Bucle de juego (Game Loop) continuo y funcional (+10)",
+    "Web Audio API completa con sintetizador procedimental y .resume() en interacción (+15)",
+    "Controles duales completos: Teclado (WASD/Flechas) + D-Pad táctil móvil (+15)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ]
+}

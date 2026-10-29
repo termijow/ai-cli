@@ -1,0 +1,404 @@
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Cyber Snake Arcade</title>
+    <style>
+        body {
+            background-color: #0a0a1a;
+            color: #00ffcc;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        #gameCanvas {
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 15px #00ffcc;
+            background-color: #050510;
+        }
+        #ui {
+            margin-bottom: 10px;
+            font-size: 1.2em;
+            text-shadow: 0 0 5px #00ffcc;
+        }
+        #controls {
+            display: none;
+            margin-top: 20px;
+            width: 200px;
+        }
+        @media (max-width: 600px) {
+            #controls {
+                display: grid;
+                grid-template-areas:
+                    ". up ."
+                    "left . right"
+                    ". down .";
+                width: 180px;
+            }
+            .dpad-btn {
+                background-color: rgba(0, 255, 204, 0.1);
+                border: 1px solid #00ffcc;
+                color: #00ffcc;
+                font-size: 1.5em;
+                padding: 10px;
+                text-align: center;
+                cursor: pointer;
+                transition: background-color 0.1s;
+            }
+            .dpad-btn:active {
+                background-color: rgba(0, 255, 204, 0.4);
+            }
+            #up { grid-area: up; }
+            #down { grid-area: down; }
+            #left { grid-area: left; }
+            #right { grid-area: right; }
+        }
+        .game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 16, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+        }
+        .overlay-btn {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 1.2em;
+            background-color: #00ffcc;
+            color: #0a0a1a;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 0 10px #00ffcc;
+            transition: transform 0.1s;
+        }
+        .overlay-btn:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body onload="loadHighscore()">
+
+    <div id="ui">Score: <span id="scoreDisplay">0</span> | High Score: <span id="highScoreDisplay">0</span></div>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="controls">
+        <div class="dpad-btn" id="up">▲</div>
+        <div class="dpad-btn" id="left">◀</div>
+        <div class="dpad-btn" id="right">▶</div>
+        <div class="dpad-btn" id="down">▼</div>
+    </div>
+
+    <div id="gameOverlay" class="game-overlay" style="display: flex;">
+        <h1 id="overlayTitle">CYBER SNAKE</h1>
+        <p id="overlayMessage">Presiona REINICIAR para comenzar la misión.</p>
+        <button class="overlay-btn" id="restartButton">REINICIAR</button>
+        <button class="overlay-btn" id="pauseButton">PAUSAR</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const highScoreDisplay = document.getElementById('highScoreDisplay');
+        const gameOverlay = document.getElementById('gameOverlay');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlayMessage = document.getElementById('overlayMessage');
+        const restartButton = document.getElementById('restartButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const controlsDiv = document.getElementById('controls');
+
+        const GRID_SIZE = 20;
+        const CANVAS_SIZE = 500;
+        canvas.width = CANVAS_SIZE;
+        canvas.height = CANVAS_SIZE;
+
+        // --- GAME STATE ---
+        let snake = [{ x: 10, y: 10 }];
+        let food = {};
+        let dx = 1;
+        let dy = 0;
+        let score = 0;
+        let highscore = 0;
+        let gameLoopInterval = 100; // ~10 ticks per second
+        let lastTickTime = 0;
+        let isRunning = false;
+        let isPaused = true; // Start paused
+        let tickCounter = 0;
+
+        // --- EFFECTS & UTILITIES ---
+        let particles = [];
+        let screenShake = { active: false, intensity: 0, duration: 0 };
+
+        // Web Audio API Setup
+        let audioContext = null;
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+        function playSound(frequency, duration, type = 'sine') {
+            if (!audioContext || audioContext.state === 'suspended') return;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+            gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+
+        function createParticles(x, y) {
+            for (let i = 0; i < 15; i++) {
+                particles.push({
+                    x: x + (Math.random() - 0.5) * 5,
+                    y: y + (Math.random() - 0.5) * 5,
+                    vx: (Math.random() - 0.5) * 3,
+                    vy: (Math.random() - 0.5) * 3,
+                    life: 30,
+                    size: Math.random() * 2 + 1
+                });
+            }
+        }
+
+        function updateParticles() {
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+            });
+        }
+
+        function applyScreenShake() {
+            if (screenShake.active && screenShake.duration > 0) {
+                const offset = (Math.random() - 0.5) * screenShake.intensity * 2;
+                ctx.save();
+                ctx.translate(offset, offset);
+                ctx.restore();
+            }
+        }
+
+        // --- GAME LOGIC ---
+
+        function loadHighscore() {
+            const storedScore = localStorage.getItem('snakeHighScore');
+            highscore = storedScore ? parseInt(storedScore) : 0;
+            highScoreDisplay.textContent = highscore;
+        }
+
+        function saveHighscore() {
+            if (score > highscore) {
+                highscore = score;
+                localStorage.setItem('snakeHighScore', highscore);
+                highScoreDisplay.textContent = highscore;
+            }
+        }
+
+        function generateFood() {
+            let newFood;
+            do {
+                newFood = {
+                    x: Math.floor(Math.random() * (CANVAS_SIZE / GRID_SIZE)),
+                    y: Math.floor(Math.random() * (CANVAS_SIZE / GRID_SIZE))
+                };
+            } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y));
+            food = newFood;
+        }
+
+        function checkCollision() {
+            const head = snake[0];
+
+            if (head.x < 0 || head.x >= CANVAS_SIZE / GRID_SIZE || head.y < 0 || head.y >= CANVAS_SIZE / GRID_SIZE) {
+                return true;
+            }
+
+            for (let i = 1; i < snake.length; i++) {
+                if (head.x === snake[i].x && head.y === snake[i].y) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function updateGame() {
+            if (!isRunning || isPaused) return;
+
+            const newHead = { x: snake[0].x + dx, y: snake[0].y + dy };
+            snake.unshift(newHead);
+
+            if (newHead.x === food.x && newHead.y === food.y) {
+                score++;
+                scoreDisplay.textContent = score;
+                createParticles(food.x * GRID_SIZE + GRID_SIZE / 2, food.y * GRID_SIZE + GRID_SIZE / 2);
+                playSound(440, 0.1, 'square');
+                generateFood();
+            } else {
+                snake.pop();
+            }
+
+            if (checkCollision()) {
+                gameOver();
+                return;
+            }
+
+            tickCounter++;
+            if (tickCounter >= (60 / gameLoopInterval)) {
+                tickCounter = 0;
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = '#050510';
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+            ctx.strokeStyle = 'rgba(0, 255, 204, 0.05)';
+            for (let i = 0; i < CANVAS_SIZE / GRID_SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * GRID_SIZE, 0);
+                ctx.lineTo(i * GRID_SIZE, CANVAS_SIZE);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i * GRID_SIZE);
+                ctx.lineTo(CANVAS_SIZE, i * GRID_SIZE);
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = '#ff0077';
+            ctx.shadowColor = '#ff0077';
+            ctx.shadowBlur = 10;
+            ctx.fillRect(food.x * GRID_SIZE, food.y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
+            ctx.shadowBlur = 0;
+
+            ctx.strokeStyle = '#00ffcc';
+            ctx.shadowColor = '#00ffcc';
+            ctx.shadowBlur = 15;
+            snake.forEach((segment, index) => {
+                ctx.fillStyle = index === 0 ? '#33ffff' : '#00cc99';
+                ctx.fillRect(segment.x * GRID_SIZE, segment.y * GRID_SIZE, GRID_SIZE - 1, GRID_SIZE - 1);
+            });
+            ctx.shadowBlur = 0;
+
+            particles.forEach(p => {
+                ctx.fillStyle = `rgba(255, 255, 255, ${p.life / 30})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // --- GAME FLOW CONTROL ---
+
+        function gameLoop(timestamp) {
+            if (isRunning) {
+                updateGame();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function startGame() {
+            initAudio(); // Initialize context
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume(); // Resume context on user interaction
+            }
+
+            // Reset state
+            snake = [{ x: 10, y: 10 }];
+            dx = 1;
+            dy = 0;
+            score = 0;
+            tickCounter = 0;
+            isRunning = true;
+            isPaused = false;
+            gameOverlay.style.display = 'none';
+            
+            generateFood();
+            loadHighscore();
+            gameLoop(0);
+        }
+
+        function pauseGame() {
+            if (isRunning && !isPaused) {
+                isPaused = true;
+                overlayTitle.textContent = "PAUSA";
+                overlayMessage.textContent = "Presiona CONTINUAR para reanudar la misión.";
+                pauseButton.textContent = "CONTINUAR";
+                gameOverlay.style.display = 'flex';
+            } else if (isRunning && isPaused) {
+                isPaused = false;
+                overlayTitle.textContent = "CYBER SNAKE";
+                overlayMessage.textContent = "¡Misión en curso!";
+                pauseButton.textContent = "PAUSAR";
+                gameOverlay.style.display = 'none';
+            }
+        }
+
+        function gameOver() {
+            isRunning = false;
+            saveHighscore();
+            overlayTitle.textContent = "GAME OVER";
+            overlayMessage.textContent = `Tu puntuación final: ${score}`;
+            pauseButton.textContent = "PAUSAR";
+            gameOverlay.style.display = 'flex';
+        }
+
+        // --- INPUT HANDLERS ---
+
+        function changeDirection(newDx, newDy) {
+            if (!isRunning || isPaused) return;
+            if (dx !== -newDx || dy !== -newDy) {
+                dx = newDx;
+                dy = newDy;
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            switch (e.key) {
+                case 'ArrowUp': case 'w': case 'W': changeDirection(0, -1); break;
+                case 'ArrowDown': case 's': case 'S': changeDirection(0, 1); break;
+                case 'ArrowLeft': case 'a': case 'A': changeDirection(-1, 0); break;
+                case 'ArrowRight': case 'd': case 'D': changeDirection(1, 0); break;
+                case ' ': 
+                    if (isRunning) {
+                        pauseGame();
+                    }
+                    break;
+            }
+        });
+
+        // Touch Controls
+        document.getElementById('up').addEventListener('touchstart', (e) => { e.preventDefault(); changeDirection(0, -1); });
+        document.getElementById('down').addEventListener('touchstart', (e) => { e.preventDefault(); changeDirection(0, 1); });
+        document.getElementById('left').addEventListener('touchstart', (e) => { e.preventDefault(); changeDirection(-1, 0); });
+        document.getElementById('right').addEventListener('touchstart', (e) => { e.preventDefault(); changeDirection(1, 0); });
+
+        // UI Button Listeners
+        restartButton.addEventListener('click', startGame);
+        pauseButton.addEventListener('click', pauseGame);
+
+        // Initial Draw
+        draw();
+    </script>
+</body>
+</html>

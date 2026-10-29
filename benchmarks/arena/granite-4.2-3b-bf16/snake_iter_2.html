@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retro Snake</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; color: #0f0; }
+    canvas { display: block; }
+    #gameOver {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; justify-content: center; align-items: center;
+      font-family: sans-serif; color: #fff; background: rgba(0,0,0,0.7);
+    }
+    #gameOver button {
+      padding: 10px 20px; font-size: 16px; cursor: pointer; margin: 5px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="400" height="400"></canvas>
+  <div id="gameOver">
+    <button id="restart">Restart</button>
+    <button id="pause">Pause</button>
+  </div>
+  <script>
+    // Audio setup
+    let audioContext;
+    let gainNode;
+    function initAudio() {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        gainNode = audioContext.createGain();
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.connect(audioContext.destination);
+      } catch (e) {
+        // Fallback: no audio
+      }
+    }
+    initAudio();
+
+    function playTone(freq, duration) {
+      if (!audioContext) return;
+      if (audioContext.state === audioContext.SUSPENDED) audioContext.resume();
+      const osc = audioContext.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const gain = audioContext.createGain();
+      gain.gain.setValueAtTime(0.1, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start(audioContext.currentTime);
+      osc.stop(audioContext.currentTime + duration);
+    }
+
+    function playEatSound() {
+      playTone(880, 0.15);
+    }
+
+    function playDeathSound() {
+      playTone(660, 0.2);
+    }
+
+    // Game state
+    const GRID_SIZE = 20;
+    const canvasW = 400;
+    const canvasH = 400;
+    let snake = [{ x: GRID_SIZE / 2, y: GRID_SIZE / 2 }];
+    let inputDirection = { dx: 0, dy: 0 };
+    let food = { x: Math.floor(Math.random() * GRID_SIZE), y: Math.floor(Math.random() * GRID_SIZE) };
+    let score = 0;
+    let highScore = localStorage.getItem('highScore') ? parseInt(localStorage.getItem('highScore')) : 0;
+    let gameState = 'playing';
+    let paused = false;
+    let shakeActive = false;
+    let shakeDuration = 0;
+    let accumulator = 0;
+    let lastTime = performance.now();
+
+    // Game loop timing
+    const TARGET_TICKS_PER_SECOND = 12;
+    const TICK_INTERVAL_MS = Math.round(1000 / TARGET_TICKS_PER_SECOND); // ~83 ms
+
+    function generateFood() {
+      let f;
+      do {
+        f = {
+          x: Math.floor(Math.random() * GRID_SIZE),
+          y: Math.floor(Math.random() * GRID_SIZE)
+        };
+      } while (snake.some(p => p.x === f.x && p.y === f.y));
+      return f;
+    }
+
+    function drawEverything() {
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      // Grid
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i <= GRID_SIZE; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * (canvasW / GRID_SIZE), 0);
+        ctx.lineTo(i * (canvasW / GRID_SIZE), canvasH);
+        ctx.stroke();
+      }
+      for (let i = 0; i <= GRID_SIZE; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, i * (canvasH / GRID_SIZE));
+        ctx.lineTo(canvasW, i * (canvasH / GRID_SIZE));
+        ctx.stroke();
+      }
+
+      // Snake
+      ctx.fillStyle = '#0ff';
+      for (let s of snake) {
+        ctx.beginPath();
+        ctx.moveTo(s.x * (canvasW / GRID_SIZE), s.y * (canvasH / GRID_SIZE));
+        ctx.lineTo((s.x + 1) * (canvasW / GRID_SIZE), (s.y + 1) * (canvasH / GRID_SIZE));
+        ctx.stroke();
+      }
+
+      // Food
+      ctx.fillStyle = '#f0f';
+      ctx.beginPath();
+      ctx.arc(food.x * (canvasW / GRID_SIZE) + (canvasW / GRID_SIZE) / 2,
+             food.y * (canvasH / GRID_SIZE) + (canvasH / GRID_SIZE) / 2,
+             (canvasW / GRID_SIZE) / 2,
+             (canvasW / GRID_SIZE) / 2);
+      ctx.fill();
+
+      // Score
+      ctx.fillStyle = '#0f0';
+      ctx.font = '14px sans-serif';
+      ctx.fillText(`Score: ${score}`, 10, 20);
+      ctx.fillText(`High: ${highScore}`, 10, 40);
+
+      // Game over screen (will be shown by gameOverDiv)
+      // We'll not draw game over here; it's handled by overlay.
+    }
+
+    function render() {
+      if (gameState === 'gameover') {
+        // Game over screen is drawn via overlay; we just show it.
+        // We'll not draw anything on canvas; the overlay is separate.
+        // But we need to draw the game over message on canvas? The overlay already shows it.
+        // We'll just return; the overlay is already displayed.
+        // Actually, we have gameOverDiv; we'll just set its display.
+        // We'll handle in the loop: if gameover, we show the overlay and stop game.
+        // For simplicity, we'll just not draw on canvas; the overlay is already shown.
+        // We'll just return; the overlay is already displayed.
+        // But we need to draw the game over screen on canvas? The requirement is to have a screen with buttons; we have overlay.
+        // We'll just leave canvas empty; the overlay is shown.
+        // We'll not draw anything on canvas for gameover.
+        return;
+      }
+
+      if (shakeActive) {
+        ctx.save();
+        const offsetX = Math.random() * 2 - 1;
+        const offsetY = Math.random() * 2 - 1;
+        ctx.translate(offsetX, offsetY);
+        drawEverything();
+        ctx.restore();
+      } else {
+        drawEverything();
+      }
+    }
+
+    function gameLoop() {
+      const now = performance.now();
+      accumulator += now - lastTime;
+      lastTime = now;
+
+      if (gameState === 'gameover') {
+        render();
+        requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      // If paused, just render
+      if (paused) {
+        render();
+        requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      // Process one tick if enough time accumulated
+      if (accumulator >= TICK_INTERVAL_MS) {
+        accumulator -= TICK_INTERVAL_MS;
+
+        const head = snake[0];
+        const newHead = {
+          x: head.x + inputDirection.dx,
+          y: head.y + inputDirection.dy
+        };
+
+        // Wall collision
+        if (newHead.x < 0 || newHead.x >= GRID_SIZE || newHead.y < 0 || newHead.y >= GRID_SIZE) {
+          gameState = 'gameover';
+          shakeActive = true;
+          shakeDuration = 3; // ticks
+          playDeathSound();
+          render();
+          requestAnimationFrame(gameLoop);
+          return;
+        }
+
+        // Self collision
+        for (let i = 1; i < snake.length; i++) {
+          if (newHead.x === snake[i].x && newHead.y === snake[i].y) {
+            gameState = 'gameover';
+            shakeActive = true;
+            shakeDuration = 3;
+            playDeathSound();
+            render();
+            requestAnimationFrame(gameLoop);
+            return;
+          }
+        }
+
+        // Move snake
+        snake.unshift(newHead);
+
+        // Eat food?
+        if (newHead.x === food.x && newHead.y === food.y) {
+          score += 10;
+          playEatSound();
+          food = generateFood();
+        } else {
+          snake.pop();
+        }
+
+        // Update shake counter
+        if (shakeActive) {
+          shakeDuration--;
+          if (shakeDuration <= 0) {
+            shakeActive = false;
+          }
+        }
+      }
+
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Input handling
+    function handleKeyDown(e) {
+      const key = e.key.toLowerCase();
+      let nd = { dx: 0, dy: 0 };
+      if (key === 'w' || key === 'arrowup') nd.dy = -1;
+      if (key === 's' || key === 'arrowdown') nd.dy = 1;
+      if (key === 'a' || key === 'arrowleft') nd.dx = -1;
+      if (key === 'd' || key === 'arrowright') nd.dx = 1;
+      inputDirection = nd;
+    }
+
+    function handleTouchStart(e) {
+      const touch = e.touches[0];
+      const cx = touch.clientX;
+      const cy = touch.clientY;
+      const centerX = canvasW / GRID_SIZE;
+      const centerY = canvasH / GRID_SIZE;
+
+      if (cy < centerY) {
+        inputDirection = { dx: 0, dy: -1 }; // up
+      } else if (cy > centerY) {
+        inputDirection = { dx: 0, dy: 1 }; // down
+      } else if (cx < centerX) {
+        inputDirection = { dx: -1, dy: 0 }; // left
+      } else {
+        inputDirection = { dx: 1, dy: 0 }; // right
+      }
+    }
+
+    // Game over screen overlay handling
+    const gameOverDiv = document.getElementById('gameOver');
+    const restartBtn = document.getElementById('restart');
+    const pauseBtn = document.getElementById('pause');
+
+    restartBtn.addEventListener('click', () => {
+      // Reset game
+      snake = [{ x: GRID_SIZE / 2, y: GRID_SIZE / 2 }];
+      food = generateFood();
+      score = 0;
+      gameState = 'playing';
+      paused = false;
+      shakeActive = false;
+      accumulator = 0;
+      lastTime = performance.now();
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      paused = !paused;
+    });
+
+    // Initialize
+    snake = [{ x: GRID_SIZE / 2, y: GRID_SIZE / 2 }];
+    food = generateFood();
+    score = 0;
+    gameState = 'playing';
+    paused = false;
+    shakeActive = false;
+    accumulator = 0;
+    lastTime = performance.now();
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('touchstart', handleTouchStart);
+
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>

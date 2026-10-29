@@ -1,0 +1,11 @@
+{
+  "model": "LFM2.5-2.6B-BF16.gguf",
+  "size_gb": 5.03,
+  "tokens": 6269,
+  "time_s": 296.96,
+  "speed": 19.72,
+  "score": 100,
+  "iterations": 1,
+  "out_file": "C:\\Users\\USUARIO\\Documents\\ai-cli\\benchmarks\\arena\\LFM2.5-2.6B-BF16\\snake.html",
+  "timestamp": "2026-10-27 14:03:45"
+}

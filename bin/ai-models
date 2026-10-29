@@ -4,8 +4,15 @@
 # AI-CLI MODEL SELECTOR & UI MANAGER
 # ==============================================================================
 
-SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd -P)"
+_RAW_SRC="${BASH_SOURCE[0]:-$0}"
+_CLEAN_SRC="${_RAW_SRC//\\//}"
+_DIR="${_CLEAN_SRC%/*}"
+[[ "$_DIR" == "$_CLEAN_SRC" ]] && _DIR="."
+SCRIPT_DIR="$(cd -P "$_DIR" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
+if [[ -z "$PROJECT_ROOT" || "$PROJECT_ROOT" == "//" || "$PROJECT_ROOT" == "/" ]] && [[ -n "$AI_CLI_ROOT" ]]; then
+    PROJECT_ROOT="$AI_CLI_ROOT"
+fi
 
 # 1. Localizar .env
 if [[ -f "$PROJECT_ROOT/.env" ]]; then

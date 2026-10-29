@@ -1,0 +1,43 @@
+{
+  "id": "gemma-4-E4B-it-Q4_K_M",
+  "model": "gemma-4-E4B-it-Q4_K_M",
+  "score": 90,
+  "speed_tps": 0.0,
+  "tokens": 0,
+  "time_sec": 0.0,
+  "iterations": 1,
+  "has_preview": true,
+  "file_size_kb": 18.3,
+  "user_rank": "Top 2",
+  "user_rating": "8.5/10",
+  "user_review": "Funciona y se ve bien, pero no le gana a Qwen 3.6 35B.",
+  "playable": true,
+  "passed_checks": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Bucle de juego (Game Loop) continuo y funcional (+10)",
+    "AudioContext y osciladores presentes (+10)",
+    "Controles duales presentes pero con bug de giro (+10)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)"
+  ],
+  "failed_checks": [
+    "Audio bloqueado por política de autoplay: llama a audioCtx.resume() dentro del listener de click o inicio del juego para que suene en navegadores modernos.",
+    "Bug matemático en giro: Estás multiplicando la posición del cuerpo por la dirección ('head.x * newDir.x'), lo que bloquea el giro cuando x=0. Compara directamente vectores (ej: if (dx !== 0 && currentDx === -dx) return)."
+  ],
+  "details": [
+    "Estructura HTML5 válida (+10)",
+    "Meta viewport para responsividad móvil (+5)",
+    "JavaScript 100% válido y libre de errores de sintaxis (+15)",
+    "Canvas 2D con contexto gráfico inicializado (+15)",
+    "Bucle de juego (Game Loop) continuo y funcional (+10)",
+    "AudioContext y osciladores presentes (+10)",
+    "Controles duales presentes pero con bug de giro (+10)",
+    "Récord persistente (High Score) en localStorage (+10)",
+    "Efectos visuales especiales (partículas / screen shake) (+5)",
+    "PENDIENTE: Audio bloqueado por política de autoplay: llama a audioCtx.resume() dentro del listener de click o inicio del juego para que suene en navegadores modernos.",
+    "PENDIENTE: Bug matemático en giro: Estás multiplicando la posición del cuerpo por la dirección ('head.x * newDir.x'), lo que bloquea el giro cuando x=0. Compara directamente vectores (ej: if (dx !== 0 && currentDx === -dx) return)."
+  ]
+}

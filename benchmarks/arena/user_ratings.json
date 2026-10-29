@@ -1,0 +1,182 @@
+{
+  "qwen3.6-35b-a3b-ud-iq2_xxs": {
+    "stars": 5,
+    "user_rating": 10.0,
+    "rating_str": "5/5 (10/10)",
+    "user_rank": "Top 1 Absoluto",
+    "user_review": "El rey absoluto de la arena.",
+    "badge_class": "badge-gold",
+    "playable": true,
+    "updated_at": "2026-10-27 14:13:34"
+  },
+  "nvidia-nemotron-3.5-bolt-e4b-ud-q4_k_xl": {
+    "stars": 5,
+    "user_rating": 9.5,
+    "rating_str": "5/5 (9.5/10)",
+    "user_rank": "Top 1 (E4B Turbo)",
+    "user_review": "100/100 en benchmark automatizado. 30.97 tok/s con DFlash MTP. Juego fluido y código impecable.",
+    "badge_class": "badge-emerald",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "gemma-4-e4b-it-ud-q6_k_xl": {
+    "stars": 5,
+    "user_rating": 9.0,
+    "rating_str": "5/5 (9/10)",
+    "user_rank": "Top 2 (Mejor E4B)",
+    "user_review": "El modelo compacto que más gustó al usuario. Funciona muy bien, buena jugabilidad y menú responsivo.",
+    "badge_class": "badge-cyan",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "gemma-4-e4b-it-q6_k": {
+    "stars": 4,
+    "user_rating": 8.5,
+    "rating_str": "4/5 (8.5/10)",
+    "user_rank": "Top 2",
+    "user_review": "Funciona y se ve bien, pero no le gana a Qwen 3.6 35B en refinamiento visual.",
+    "badge_class": "badge-cyan",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "gemma-4-e4b-it-q4_k_m": {
+    "stars": 4,
+    "user_rating": 8.0,
+    "rating_str": "4/5 (8/10)",
+    "user_rank": "Bueno",
+    "user_review": "Juego funcional, gráficos aceptables.",
+    "badge_class": "badge-cyan",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "granite-4.2-3b-q4_k_m": {
+    "stars": 4,
+    "user_rating": 8.5,
+    "rating_str": "4/5 (8.5/10)",
+    "user_rank": "Excelente Compacto",
+    "user_review": "Muy rápido (28.5 t/s), código limpio y juego completamente funcional.",
+    "badge_class": "badge-emerald",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "granite-4.2-3b-bf16": {
+    "stars": 3,
+    "user_rating": 6.5,
+    "rating_str": "3/5 (6.5/10)",
+    "user_rank": "Funcional pero Lento",
+    "user_review": "El juego funciona pero la velocidad de 3.8 t/s lo hace pesado de generar.",
+    "badge_class": "badge-amber",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "minicpm5-2b-q4_k_m": {
+    "stars": 4,
+    "user_rating": 8.0,
+    "rating_str": "4/5 (8/10)",
+    "user_rank": "Ultra Rápido",
+    "user_review": "46.3 t/s, juego ligero y jugable.",
+    "badge_class": "badge-cyan",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "k2-horizon-7b-q4_k_m": {
+    "stars": 4,
+    "user_rating": 8.0,
+    "rating_str": "4/5 (8/10)",
+    "user_rank": "Sólido",
+    "user_review": "Razonamiento completo y juego jugable.",
+    "badge_class": "badge-cyan",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "lfm2.5-2.6b-q4_k_m": {
+    "stars": 4,
+    "user_rating": 8.0,
+    "rating_str": "4/5 (8/10)",
+    "user_rank": "Ultra Rápido",
+    "user_review": "60.3 t/s de velocidad, estructura de juego correcta.",
+    "badge_class": "badge-cyan",
+    "playable": true,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "gemma-4-e2b-it-ud-q6_k_xl": {
+    "stars": 2,
+    "user_rating": 5.0,
+    "rating_str": "2/5 (5/10)",
+    "user_rank": "Defectuoso (Bloqueo UI)",
+    "user_review": "Tiene 100/100 sintético pero el menú de inicio queda bloqueado al frente y no deja jugar.",
+    "badge_class": "badge-amber",
+    "playable": false,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "gemma-4-e2b-it-q8_0": {
+    "stars": 2,
+    "user_rating": 5.0,
+    "rating_str": "2/5 (5/10)",
+    "user_rank": "Defectuoso (Bloqueo UI)",
+    "user_review": "100/100 sintético pero sufre del mismo bug de overlay bloqueado.",
+    "badge_class": "badge-amber",
+    "playable": false,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "gemma-4-e2b-it-q4_k_m": {
+    "stars": 2,
+    "user_rating": 4.5,
+    "rating_str": "2/5 (4.5/10)",
+    "user_rank": "Defectuoso (Serpiente inmóvil)",
+    "user_review": "Carga el canvas pero la serpiente no se mueve. No jugable.",
+    "badge_class": "badge-amber",
+    "playable": false,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "ternary-bonsai-2-27b-ptq1_0": {
+    "stars": 2,
+    "user_rating": 4.0,
+    "rating_str": "2/5 (4/10)",
+    "user_rank": "No Jugable (Falso 100)",
+    "user_review": "100/100 sintético y se ve bonito, pero la lógica del juego está inactiva y no se puede jugar.",
+    "badge_class": "badge-rose",
+    "playable": false,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "gemma-4-26b-a4b-it-ud-iq2_xxs": {
+    "stars": 1,
+    "user_rating": 3.0,
+    "rating_str": "1/5 (3/10)",
+    "user_rank": "Decepcionante",
+    "user_review": "Le tenía más fe, pero nada que ver con Qwen 3.6. El juego ni siquiera es jugable.",
+    "badge_class": "badge-rose",
+    "playable": false,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "qwen3.5-9b-q4_k_m": {
+    "stars": 1,
+    "user_rating": 2.0,
+    "rating_str": "1/5 (2/10)",
+    "user_rank": "Roto (Falso 100)",
+    "user_review": "100/100 sintético pero dejó variables fuera de scope provocando ReferenceError inmediato.",
+    "badge_class": "badge-red",
+    "playable": false,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "ling-3.0-tiny-q4_k_m": {
+    "stars": 1,
+    "user_rating": 2.0,
+    "rating_str": "1/5 (2/10)",
+    "user_rank": "Pésimo",
+    "user_review": "Para los tokens que consumió me pareció una remierda. Nivel visual y jugable muy bajo.",
+    "badge_class": "badge-red",
+    "playable": false,
+    "updated_at": "2026-10-27 14:00:00"
+  },
+  "qwen3.5-0.8b-q4_k_m": {
+    "stars": 1,
+    "user_rating": 1.0,
+    "rating_str": "1/5 (1/10)",
+    "user_rank": "Pésimo",
+    "user_review": "Demasiado pequeño para un videojuego completo sin alucinaciones.",
+    "badge_class": "badge-red",
+    "playable": false,
+    "updated_at": "2026-10-27 14:00:00"
+  }
+}

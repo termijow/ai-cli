@@ -1,0 +1,11 @@
+{
+  "model": "LFM2.5-2.6B-Q4_K_M.gguf",
+  "size_gb": 1.56,
+  "tokens": 57079,
+  "time_s": 446.65,
+  "speed": 60.34,
+  "score": 95,
+  "iterations": 4,
+  "out_file": "C:\\Users\\USUARIO\\Documents\\ai-cli\\benchmarks\\arena\\LFM2.5-2.6B-Q4_K_M\\snake.html",
+  "timestamp": "2026-10-27 13:50:47"
+}

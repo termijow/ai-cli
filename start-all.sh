@@ -70,6 +70,7 @@ echo -e "${GREEN}│${NC} ${GREEN}✨ TODOS LOS SERVICIOS ESTÁN EN EJECUCIÓN${
 echo -e "${GREEN}├──────────────────────────────────────────────────────────┤${NC}"
 echo -e "${GREEN}│${NC} 🌐 Frontend Web Studio: ${YELLOW}http://localhost:5173${NC}"
 echo -e "${GREEN}│${NC} ⚙️  Backend REST API:    ${YELLOW}http://localhost:3094${NC}"
+echo -e "${GREEN}│${NC} ⚔️  Arena Benchmarks:   ${YELLOW}http://localhost:3094/benchmarks${NC}"
 echo -e "${GREEN}│${NC} 🧠 LLM llama-server:   ${YELLOW}http://localhost:1234${NC}"
 echo -e "${GREEN}╰──────────────────────────────────────────────────────────╯${NC}\n"
 echo -e "${BLUE}ℹ  Usa 'ai services stop' para detener.${NC}\n"
