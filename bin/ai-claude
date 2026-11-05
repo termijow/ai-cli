@@ -3,10 +3,17 @@
 # AI-CLAUDE: Lanza Claude Code apuntando al servidor local (ai-serve)
 # ==============================================================================
 
-_RAW_SRC="${BASH_SOURCE[0]:-$0}"
-_CLEAN_SRC="${_RAW_SRC//\\//}"
-_DIR="${_CLEAN_SRC%/*}"
-[[ "$_DIR" == "$_CLEAN_SRC" ]] && _DIR="."
+# Detectar ubicación del script de forma portable (resolviendo symlinks y rutas Windows/POSIX)
+_SOURCE="${BASH_SOURCE[0]:-$0}"
+_SOURCE="${_SOURCE//\\//}"
+while [[ -L "$_SOURCE" ]]; do
+    _DIR="$(cd -P "$(dirname "$_SOURCE")" >/dev/null 2>&1 && pwd -P)"
+    _SOURCE="$(readlink "$_SOURCE")"
+    [[ "$_SOURCE" != /* ]] && _SOURCE="$_DIR/$_SOURCE"
+    _SOURCE="${_SOURCE//\\//}"
+done
+_DIR="${_SOURCE%/*}"
+[[ "$_DIR" == "$_SOURCE" ]] && _DIR="."
 SCRIPT_DIR="$(cd -P "$_DIR" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 if [[ -z "$PROJECT_ROOT" || "$PROJECT_ROOT" == "//" || "$PROJECT_ROOT" == "/" ]] && [[ -n "$AI_CLI_ROOT" ]]; then
@@ -20,6 +27,20 @@ fi
 
 PORT=${PORT:-1234}
 ACTIVE_MODEL="${MODEL_FILE:-local-model}"
+
+# Asegurar que ~/.local/bin esté en el PATH
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
+
+# Omitir chequeo del servidor para flags informativos
+case "$1" in
+    --help|-h|--version|-v)
+        exec "$CLAUDE_BIN" "$@"
+        ;;
+esac
 
 export ANTHROPIC_BASE_URL="http://127.0.0.1:${PORT}"
 export ANTHROPIC_AUTH_TOKEN="local"
@@ -52,10 +73,10 @@ export MAX_THINKING_TOKENS="${AI_THINKING_BUDGET:-1024}"
 # Verificar si el servidor local está respondiendo
 if ! curl -sf "http://127.0.0.1:${PORT}/health" > /dev/null 2>&1; then
     echo "⚠️  El servidor local no parece estar corriendo en http://127.0.0.1:${PORT}"
-    echo "   Recuerda iniciar el servidor con 'ai serve' o 'ai start'."
+    echo "   Tip: Ejecuta 'ai serve' o 'ai-serve' primero en otra terminal."
     echo ""
     read -rp "¿Intentar conectar a Claude Code de todas formas? (s/n): " ans
     [[ "$ans" != "s" && "$ans" != "S" ]] && exit 1
 fi
 
-exec claude "$@"
+exec "$CLAUDE_BIN" "$@"

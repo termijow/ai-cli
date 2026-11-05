@@ -1,10 +1,16 @@
 #!/bin/bash
 
-# Detectar ubicación del script de forma portable
-_RAW_SRC="${BASH_SOURCE[0]:-$0}"
-_CLEAN_SRC="${_RAW_SRC//\\//}"
-_DIR="${_CLEAN_SRC%/*}"
-[[ "$_DIR" == "$_CLEAN_SRC" ]] && _DIR="."
+# Detectar ubicación del script de forma portable (resolviendo symlinks y rutas Windows/POSIX)
+_SOURCE="${BASH_SOURCE[0]:-$0}"
+_SOURCE="${_SOURCE//\\//}"
+while [[ -L "$_SOURCE" ]]; do
+    _DIR="$(cd -P "$(dirname "$_SOURCE")" >/dev/null 2>&1 && pwd -P)"
+    _SOURCE="$(readlink "$_SOURCE")"
+    [[ "$_SOURCE" != /* ]] && _SOURCE="$_DIR/$_SOURCE"
+    _SOURCE="${_SOURCE//\\//}"
+done
+_DIR="${_SOURCE%/*}"
+[[ "$_DIR" == "$_SOURCE" ]] && _DIR="."
 SCRIPT_DIR="$(cd -P "$_DIR" >/dev/null 2>&1 && pwd -P)"
 PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 if [[ -z "$PROJECT_ROOT" || "$PROJECT_ROOT" == "//" || "$PROJECT_ROOT" == "/" ]] && [[ -n "$AI_CLI_ROOT" ]]; then
@@ -304,7 +310,7 @@ case "$1" in
         if [[ -f "$PROJECT_ROOT/bin/ai-claude" ]]; then
             exec "$PROJECT_ROOT/bin/ai-claude" "$@"
         else
-            exec claude --local "$@"
+            exec claude "$@"
         fi
         ;;
     qwen)
@@ -313,6 +319,16 @@ case "$1" in
             exec "$PROJECT_ROOT/bin/ai-qwen" "$@"
         else
             exec qwen "$@"
+        fi
+        ;;
+    pi)
+        shift
+        if [[ -f "$PROJECT_ROOT/bin/ai-pi" ]]; then
+            exec "$PROJECT_ROOT/bin/ai-pi" "$@"
+        else
+            export LLAMA_BASE_URL="http://127.0.0.1:${PORT:-1234}"
+            export PATH="$HOME/.local/bin:$PATH"
+            exec pi "$@"
         fi
         ;;
     whatsapp|wa)
