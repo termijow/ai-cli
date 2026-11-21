@@ -81,6 +81,9 @@ def get_model_recommendations(model_name: str, size_bytes: int):
         else:
             return f"{size_gb:.2f}", 21, "🟡 MoE Híbrido GPU+RAM (~6.6GB VRAM + ~6.5GB RAM)", "moe_a3b"
 
+    if "INKLING" in model_name.upper():
+        return f"{size_gb:.2f}", 12, "🟡 MoE Looped Híbrido GPU+RAM (~5.5GB VRAM + ~6GB RAM)", "moe_inkling"
+
     if size_mb <= 3500:
         return f"{size_gb:.2f}", 99, "🟢 100% en GPU VRAM (Ultra Rápido)", "small"
     elif size_mb <= 7300:
