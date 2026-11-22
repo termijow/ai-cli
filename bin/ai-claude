@@ -54,21 +54,26 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL="$ACTIVE_MODEL"
 export CLAUDE_CODE_ATTRIBUTION_HEADER="0"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
 
-# Ajuste estricto al contexto de ai-serve (65,536 tokens)
-# Auto-compact programado en 54,000 tokens para que NUNCA desborde ni se muera el servidor
-export CLAUDE_CODE_MAX_CONTEXT_TOKENS="65536"
-export CLAUDE_CODE_AUTO_COMPACT_WINDOW="54000"
+# Ajuste dinamico al contexto de ai-serve
+export CLAUDE_CODE_MAX_CONTEXT_TOKENS="${AI_CTX_SIZE:-65536}"
+_ctx_val="${AI_CTX_SIZE:-65536}"
+_compact_val=$(( _ctx_val * 82 / 100 ))
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW="$_compact_val"
 unset DISABLE_AUTO_COMPACT
 
-# Timeouts generosos para modelos locales (evita falsos desconexiones durante prompt evaluation de 30k+ tokens)
+# Timeouts generosos para modelos locales (evita falsas desconexiones durante prompt evaluation de 30k+ tokens)
 export API_TIMEOUT_MS="600000"
 export CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS="600000"
 export CLAUDE_STREAM_IDLE_TIMEOUT_MS="300000"
 export CLAUDE_BYTE_STREAM_IDLE_TIMEOUT_MS="300000"
 export CLAUDE_CODE_CONNECT_TIMEOUT_MS="60000"
 
-# Sincronizar presupuesto de razonamiento (thinking) de Claude Code con llama-server (1024 tokens)
-export MAX_THINKING_TOKENS="${AI_THINKING_BUDGET:-1024}"
+# Sincronizar presupuesto de razonamiento (thinking) de Claude Code con llama-server (0 = respuesta rapida)
+if [[ "${AI_REASONING,,}" == "off" || "${AI_THINKING_LEVEL,,}" == "off" ]]; then
+    export MAX_THINKING_TOKENS=0
+else
+    export MAX_THINKING_TOKENS="${AI_THINKING_BUDGET:-1024}"
+fi
 
 # Verificar si el servidor local está respondiendo
 if ! curl -sf "http://127.0.0.1:${PORT}/health" > /dev/null 2>&1; then
